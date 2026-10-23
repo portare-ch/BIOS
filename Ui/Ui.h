@@ -17,7 +17,6 @@
 
 #include "Base/OablBase.h"
 
-#include "Core/Gpt.h"
 #include "Core/Settings.h"
 
 typedef struct _DEVICE_INFO {
@@ -69,7 +68,7 @@ typedef enum {
   COMMAND_POWER_OFF,
   COMMAND_SAVE_SETTINGS,
   COMMAND_SCAN_MODELS,
-  COMMAND_UNINSTALL_CFW,
+  COMMAND_INSTALL, // Arg is an INSTALL_CHOICE; InstallAndroid is Android's share
   COMMAND_DEVICE_INFO,
   COMMAND_LOG,
   COMMAND_SAVE_EXPERIMENTS, // saves Experiments
@@ -89,12 +88,14 @@ typedef enum {
   BOOT_ERROR_ANDROID,        // Android boot isn't available
   BOOT_ERROR_MODEL_NOT_SET,  // a model is needed for the devicetree
   BOOT_ERROR_ANDROID_FAILED, // booting Android (boot_a/b) returned
-  BOOT_ERROR_WIPE_BY_HAND,   // Linux removed, but Android isn't the boot mode
-  BOOT_ERROR_UNINSTALL,      // removing Linux failed; ErrorDetail says why
   // The boot list's pick: its drive is gone, or it didn't start. ErrorDetail
   // names it, or is empty after a restart.
   BOOT_ERROR_PICK_GONE,
   BOOT_ERROR_PICK_FAILED,
+  BOOT_ERROR_NO_CARD, // Install PortareOS without a PortareOS card
+  // Installing failed; ErrorDetail says why, InstallChanged whether
+  // internal storage was changed.
+  BOOT_ERROR_INSTALL,
 } BOOT_ERROR;
 
 // What the view draws
@@ -143,7 +144,7 @@ typedef enum {
 typedef enum {
   ITEM_BOOT, // opens the boot list
   ITEM_BOOT_ORDER,
-  ITEM_UNINSTALL, // PortareOS, from internal storage
+  ITEM_INSTALL,   // PortareOS, from the SD card to internal storage
   ITEM_EDL,
   ITEM_RESTART,
   ITEM_POWER_OFF,
@@ -176,14 +177,54 @@ typedef enum {
   SCREEN_BOOTING,
   SCREEN_ERROR,
   SCREEN_LINES,        // the device info, or the log
-  SCREEN_UNINSTALLING, // while Linux is removed; takes no input
-  SCREEN_RESTARTING,   // into recovery after an uninstall; takes no input
+  SCREEN_INSTALL,      // Install PortareOS's two choices
+  SCREEN_INSTALL_SIZE, // a first Dualboot: what Android keeps
+  SCREEN_INSTALLING,   // takes no input
+  SCREEN_INSTALLED,    // Select restarts
+  // The charger powered the Nova on. Select starts the default system; Up
+  // and Down open the menu.
+  SCREEN_CHARGING,
 } SCREEN;
 
 typedef enum {
-  CONFIRM_UNINSTALL,
-  CONFIRM_EDL
+  CONFIRM_EDL,
+  CONFIRM_INSTALL,
 } CONFIRM;
+
+typedef enum {
+  INSTALL_CHOICE_DUALBOOT,
+  INSTALL_CHOICE_REPLACE,
+} INSTALL_CHOICE;
+
+// How far an install is, for the installing screen.
+typedef enum {
+  INSTALL_STAGE_PREPARE,
+  INSTALL_STAGE_STORAGE,
+  INSTALL_STAGE_COPY,
+  INSTALL_STAGE_CHECK,
+} INSTALL_STAGE;
+
+// What Install PortareOS can do, from the platform's look at the SD card
+// and internal storage when the menu started. Sizes are in bytes.
+typedef struct _INSTALL_INFO {
+  BOOLEAN Card;     // a PortareOS card is in
+  BOOLEAN Known;    // internal storage's layout was read and understood
+  BOOLEAN Android;  // Android is installed
+  BOOLEAN Dualboot; // Dualboot can run
+  // Dualboot only replaces PortareOS's system: it's next to Android
+  // already, and its storage stays.
+  BOOLEAN Update;
+  BOOLEAN Replace;   // Replace Android can run
+  BOOLEAN PortareOs; // PortareOS is on internal storage
+  // A first Dualboot splits Shared between Android, which keeps AndroidMin
+  // to AndroidMax, PortareOS's system (BootBytes) and its storage.
+  UINT64 Shared;
+  UINT64 AndroidMin;
+  UINT64 AndroidMax;
+  UINT64 BootBytes;
+  UINT64 UpdateStorage;  // an update keeps this storage
+  UINT64 ReplaceStorage; // Replace Android gives storage this
+} INSTALL_INFO;
 
 // Scroll is the first row the list shows.
 typedef struct _LIST_STATE {
@@ -195,7 +236,8 @@ typedef struct _LIST_STATE {
 #define MAX_MODELS  64
 #define MAX_ENTRIES 32
 #define MAX_LINES   512
-#define MAX_CFW_PARTS 8
+// What a first Dualboot offers Android to keep.
+#define MAX_ANDROID_SIZES 6
 
 typedef struct _MODEL {
   CHAR8  Name[MODEL_LEN];
@@ -248,8 +290,6 @@ typedef struct _APP {
   BOOLEAN PickFromSd;
   // What the starting screen and a boot error are about.
   BOOT_TARGET Starting;
-  // On the restarting screen: whether recovery was asked to wipe data.
-  BOOLEAN    Wiped;
 
   ITEM       FocusItem;
   LIST_STATE Menu;
@@ -258,13 +298,25 @@ typedef struct _APP {
   UINTN      ModelCount;
   LIST_STATE ModelList;
 
-  // Linux's partitions on internal storage, listed before an uninstall.
-  GPT_CFW_PART CfwParts[MAX_CFW_PARTS];
-  UINTN        CfwPartCount;
-
   ENTRY_VIEW Entries[MAX_ENTRIES];
   UINTN      EntryCount;
   LIST_STATE EntryList;
+
+  // Install PortareOS: what it can do, the choice and Android's share.
+  INSTALL_INFO   Install;
+  LIST_STATE     InstallList;
+  LIST_STATE     SizeList;
+  INSTALL_CHOICE InstallChoice;
+  UINT64         InstallAndroid;
+  INSTALL_STAGE  InstallStage;
+  UINT32         InstallPermille;
+  BOOLEAN        InstallChanged;
+
+  // The charging screen: whether the battery could be read, whether a
+  // charger is in, and the battery's voltage.
+  BOOLEAN BatteryKnown;
+  BOOLEAN Charger;
+  UINT32  BatteryMv;
 
   // The device info or the log. LinesFrom is the menu item it was opened
   // from, focused again on the way back.
@@ -340,15 +392,6 @@ AppSetCaps (
   IN CONST SETTINGS_CAPS *Caps
 );
 
-// Sets the partitions the uninstall confirmation lists, at most
-// MAX_CFW_PARTS of them.
-VOID
-AppSetCfwParts (
-  IN OUT APP                *A,
-  IN CONST GPT_CFW_PART     *Parts OPTIONAL,
-  IN UINTN                   Count
-);
-
 // W and H are the panel's size before any rotation.
 VOID
 AppSetPhysicalSize (
@@ -415,17 +458,6 @@ AppOnBootResult (
   IN CONST CHAR8 *Detail OPTIONAL
 );
 
-// After Linux was removed. Restarting shows the restarting screen, which
-// ignores input until the platform restarts; Wiped says whether recovery
-// was asked to wipe Android's data. Without a restart, the error screen
-// says to set the boot mode and wipe by hand.
-VOID
-AppOnUninstalled (
-  IN OUT APP *A,
-  IN BOOLEAN  Restarting,
-  IN BOOLEAN  Wiped
-);
-
 // After the boot list's pick didn't start: Gone if its drive was missing.
 // Name is the system, "" if unknown (after a restart).
 VOID
@@ -436,12 +468,66 @@ AppOnPickFailed (
   IN BOOLEAN      FromSd
 );
 
-// After removing Linux failed: the error screen, with Why as its message.
 VOID
-AppOnUninstallFailed (
-  IN OUT APP     *A,
-  IN CONST CHAR8 *Why
+AppSetInstall (
+  IN OUT APP              *A,
+  IN CONST INSTALL_INFO   *Info
 );
+
+// The sizes a first Dualboot offers Android, smallest first, at most
+// MAX_ANDROID_SIZES; Default gets the one to focus.
+UINTN
+AppAndroidSizes (
+  IN CONST APP *A,
+  OUT UINT64   *Sizes,
+  OUT UINTN    *Default
+);
+
+// What PortareOS's storage gets from a first Dualboot leaving Android
+// AndroidBytes.
+UINT64
+AppDualbootStorage (
+  IN CONST APP *A,
+  IN UINT64     AndroidBytes
+);
+
+// While installing: the stage and how much of the whole is done, in
+// thousandths. Marks the state dirty only when the shown percent changes.
+VOID
+AppOnInstallProgress (
+  IN OUT APP       *A,
+  IN INSTALL_STAGE  Stage,
+  IN UINT32         Permille
+);
+
+// After installing: the installed screen, or the error screen with Why,
+// saying whether internal storage was Changed.
+VOID
+AppOnInstalled (
+  IN OUT APP     *A,
+  IN BOOLEAN      Ok,
+  IN CONST CHAR8 *Why OPTIONAL,
+  IN BOOLEAN      Changed
+);
+
+// Shows the charging screen instead of the menu, with no countdown.
+VOID
+AppStartCharging (IN OUT APP *A);
+
+// The battery as the platform last read it. Marks the state dirty only when
+// the charger comes or goes or the level shown changes.
+VOID
+AppOnBattery (
+  IN OUT APP *A,
+  IN BOOLEAN  Known,
+  IN BOOLEAN  Charger,
+  IN UINT32   MilliVolts
+);
+
+// The battery's charge in percent, estimated from its voltage for the
+// Nova's 4.5 V cell, less what charging adds to it. 0 when unknown.
+UINT32
+AppBatteryLevel (IN CONST APP *A);
 
 // Shows why a command failed, returning to the menu from a screen that was
 // waiting for it.

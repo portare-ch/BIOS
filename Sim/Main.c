@@ -27,7 +27,6 @@
 #include "Ui/Ui.h"
 #include "View/View.h"
 
-
 STATIC CONST INT32 mPanels[][2] = {{1080, 1920}, {960, 1280},  {720, 1280},
                                    {1440, 2560}, {1920, 1080}, {1240, 1080},
                                    {1280, 800}};
@@ -159,12 +158,6 @@ SampleModels (OUT CONST MODEL **Models)
   return sizeof (mModels) / sizeof (mModels[0]);
 }
 
-// PortareOS's partitions on internal storage, shown as 2.1 GB and 105 GB.
-STATIC CONST GPT_CFW_PART mCfwParts[] = {
-  {"PORTAREOS", 2ULL << 30},
-  {"PORTAREOS_STOR", 98ULL << 30},
-};
-
 // The boot list on a Nova with PortareOS inside and a PortareOS card.
 STATIC CONST ENTRY_VIEW mEntries[] = {
   {.Title = "PortareOS", .Drive = "PORTAREOS", .Kind = ENTRY_KIND_BOOT_IMAGE},
@@ -173,6 +166,23 @@ STATIC CONST ENTRY_VIEW mEntries[] = {
    .Kind      = ENTRY_KIND_BOOT_IMAGE,
    .Removable = TRUE},
   {.Title = "Android", .Kind = ENTRY_KIND_ANDROID},
+};
+
+// A stock Nova (Android alone, userdata from 14520 MiB of 117776) with a
+// PortareOS card in.
+#define MIB (1ull << 20)
+STATIC CONST INSTALL_INFO mInstall = {
+  .Card           = TRUE,
+  .Known          = TRUE,
+  .Android        = TRUE,
+  .Dualboot       = TRUE,
+  .Replace        = TRUE,
+  .Shared         = 103255 * MIB,
+  .AndroidMin     = 4ull << 30,
+  .AndroidMax     = 91ull << 30,
+  .BootBytes      = 2048 * MIB,
+  .UpdateStorage  = 100183 * MIB,
+  .ReplaceStorage = 113496 * MIB,
 };
 
 // Screens
@@ -196,8 +206,8 @@ MakeApp (
   SampleInfo (&Info);
   Language.Language = LANG_EN;
   AppInit (A, &Language, &Caps, &Info, SCHEME_HANDHELD, MENU_VERSION);
-  AppSetCfwParts (A, mCfwParts, sizeof (mCfwParts) / sizeof (mCfwParts[0]));
   AppSetEntries (A, mEntries, sizeof (mEntries) / sizeof (mEntries[0]));
+  AppSetInstall (A, &mInstall);
 }
 
 // Takes A, started at Now, to one of the screens.
@@ -228,8 +238,7 @@ SCountdown (
   AppTick (A, Now + 1200);
 }
 
-// After Uninstall Android: only PortareOS starts, and nothing is left to
-// uninstall.
+// After Replace Android: only PortareOS starts.
 STATIC VOID
 SNoAndroid (
   IN OUT APP *A,
@@ -281,20 +290,6 @@ SModels (
   (VOID)Now;
   AppOnModels (A, Models, Count);
   AppInput (A, INPUT_DOWN);
-}
-
-// Uninstall PortareOS, with Cancel picked.
-STATIC VOID
-SConfirmUninstall (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  (VOID)Now;
-  for (INT32 Index = 0; Index < 2; Index++) {
-    AppInput (A, INPUT_DOWN);
-  }
-  AppInput (A, INPUT_SELECT);
 }
 
 // Emergency download mode, with Enter EDL picked.
@@ -376,55 +371,6 @@ SErrorNoImage (
   AppOnBootResult (A, FALSE, BOOT_ERROR_NO_IMAGE, NULL);
 }
 
-// After an uninstall, waiting for the restart into recovery.
-STATIC VOID
-SRestarting (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  (VOID)Now;
-  AppOnUninstalled (A, TRUE, TRUE);
-}
-
-// With Uninstall picked, while the table is rewritten.
-STATIC VOID
-SUninstalling (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  SConfirmUninstall (A, Now);
-  AppInput (A, INPUT_DOWN);
-  AppInput (A, INPUT_SELECT);
-}
-
-// After an uninstall that couldn't write the partition table.
-STATIC VOID
-SErrorUninstall (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  CONST CHAR8 *Args[1] = {"error 7"};
-  CHAR8        Why[192];
-
-  (VOID)Now;
-  LangFill (Why, sizeof (Why), gStrings->UninstallWriteFailed, Args, 1);
-  AppOnUninstallFailed (A, Why);
-}
-
-// After an uninstall that couldn't make Android the boot mode.
-STATIC VOID
-SErrorWipeByHand (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  (VOID)Now;
-  AppOnUninstalled (A, FALSE, FALSE);
-}
-
 STATIC VOID
 SErrorModel (
   IN OUT APP *A,
@@ -467,6 +413,190 @@ SErrorPickFailed (
   AppOnPickFailed (A, FALSE, "PortareOS", TRUE);
 }
 
+// Install PortareOS's choices, Dualboot focused.
+STATIC VOID
+SInstall (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppInput (A, INPUT_DOWN);
+  AppInput (A, INPUT_DOWN);
+  AppInput (A, INPUT_SELECT);
+}
+
+STATIC VOID
+SInstallReplace (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SInstall (A, Now);
+  AppInput (A, INPUT_DOWN);
+}
+
+// PortareOS next to Android already: Dualboot updates it.
+STATIC VOID
+SInstallUpdate (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  INSTALL_INFO Info = mInstall;
+
+  Info.Update    = TRUE;
+  Info.PortareOs = TRUE;
+  AppSetInstall (A, &Info);
+  SInstall (A, Now);
+}
+
+// Partitions BIOS doesn't know: neither choice runs.
+STATIC VOID
+SInstallUnknown (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  INSTALL_INFO Info = mInstall;
+
+  Info.Known    = FALSE;
+  Info.Dualboot = FALSE;
+  Info.Replace  = FALSE;
+  AppSetInstall (A, &Info);
+  SInstall (A, Now);
+}
+
+STATIC VOID
+SInstallSize (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SInstall (A, Now);
+  AppInput (A, INPUT_SELECT);
+}
+
+// Android keeping 16 GB, with Install picked.
+STATIC VOID
+SConfirmDualboot (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SInstallSize (A, Now);
+  AppInput (A, INPUT_SELECT);
+  AppInput (A, INPUT_DOWN);
+}
+
+STATIC VOID
+SConfirmUpdate (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SInstallUpdate (A, Now);
+  AppInput (A, INPUT_SELECT);
+  AppInput (A, INPUT_DOWN);
+}
+
+// Replace Android over a Dualboot install.
+STATIC VOID
+SConfirmReplace (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SInstallUpdate (A, Now);
+  AppInput (A, INPUT_DOWN);
+  AppInput (A, INPUT_SELECT);
+  AppInput (A, INPUT_DOWN);
+}
+
+STATIC VOID
+SInstalling (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SConfirmDualboot (A, Now);
+  AppInput (A, INPUT_SELECT);
+  AppOnInstallProgress (A, INSTALL_STAGE_COPY, 437);
+}
+
+STATIC VOID
+SInstalled (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SInstalling (A, Now);
+  AppOnInstalled (A, TRUE, NULL, TRUE);
+}
+
+STATIC VOID
+SErrorNoCard (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  INSTALL_INFO Info = mInstall;
+
+  Info.Card = FALSE;
+  AppSetInstall (A, &Info);
+  SInstall (A, Now);
+}
+
+// A write failed after the table changed.
+STATIC VOID
+SErrorInstall (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  CONST CHAR8 *Args[1] = {"error 7"};
+  CHAR8        Why[192];
+
+  SInstalling (A, Now);
+  LangFill (Why, sizeof (Why), gStrings->InstallWriteFailed, Args, 1);
+  AppOnInstalled (A, FALSE, Why, TRUE);
+}
+
+// Powered on by the charger, about half charged.
+STATIC VOID
+SCharging (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppStartCharging (A);
+  AppOnBattery (A, TRUE, TRUE, 4010);
+}
+
+STATIC VOID
+SChargingLow (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppStartCharging (A);
+  AppOnBattery (A, TRUE, TRUE, 3690);
+}
+
+// XBL couldn't read the battery's voltage.
+STATIC VOID
+SChargingUnknown (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppStartCharging (A);
+  AppOnBattery (A, TRUE, TRUE, 0);
+}
+
 STATIC CONST struct {
   CONST CHAR8  *Name;
   SESSION_SETUP Setup;
@@ -479,8 +609,22 @@ STATIC CONST struct {
   {"boot-list", SBootList},
   {"boot-list-sd", SBootListSd},
   {"models", SModels},
-  {"confirm-uninstall", SConfirmUninstall},
   {"confirm-edl", SConfirmEdl},
+  {"install", SInstall},
+  {"install-replace", SInstallReplace},
+  {"install-update", SInstallUpdate},
+  {"install-unknown", SInstallUnknown},
+  {"install-size", SInstallSize},
+  {"confirm-dualboot", SConfirmDualboot},
+  {"confirm-update", SConfirmUpdate},
+  {"confirm-replace", SConfirmReplace},
+  {"installing", SInstalling},
+  {"installed", SInstalled},
+  {"error-no-card", SErrorNoCard},
+  {"error-install", SErrorInstall},
+  {"charging", SCharging},
+  {"charging-low", SChargingLow},
+  {"charging-unknown", SChargingUnknown},
   {"booting", SBooting},
   {"booting-sd", SBootingSd},
   {"booting-android", SBootingAndroid},
@@ -488,10 +632,6 @@ STATIC CONST struct {
   {"error-pick-gone", SErrorPickGone},
   {"error-pick-failed", SErrorPickFailed},
   {"error-model", SErrorModel},
-  {"uninstalling", SUninstalling},
-  {"restarting", SRestarting},
-  {"error-uninstall", SErrorUninstall},
-  {"error-wipe-by-hand", SErrorWipeByHand},
   {"toast", SToast},
 };
 
@@ -611,11 +751,11 @@ STATIC CONST STEP mSessionLines[]   = {{STEP_LINES, 0, 1},
                                        PRESS (UP, 30),
                                        PRESS (BACK, 1),
                                        PRESS (DOWN, 2)};
-// Uninstall PortareOS and back, then Emergency download mode and back.
+// Install PortareOS's choices and back, then Emergency download mode and
+// back.
 STATIC CONST STEP mSessionConfirm[] = {
-  PRESS (DOWN, 2),   PRESS (SELECT, 1), PRESS (DOWN, 1),
-  PRESS (UP, 1),     PRESS (BACK, 1),   PRESS (DOWN, 1),
-  PRESS (SELECT, 1), PRESS (DOWN, 1),   PRESS (BACK, 1)};
+  PRESS (DOWN, 2),   PRESS (SELECT, 1), PRESS (BACK, 1), PRESS (DOWN, 1),
+  PRESS (SELECT, 1), PRESS (DOWN, 1),   PRESS (UP, 1),   PRESS (BACK, 1)};
 STATIC CONST STEP mSessionToast[] = {{STEP_NOTIFY, 0, 1}, {STEP_WAIT, 0, 3500},
                                      PRESS (DOWN, 3),     {STEP_NOTIFY, 0, 1},
                                      PRESS (UP, 3),       {STEP_WAIT, 0, 3500}};
@@ -673,6 +813,16 @@ STATIC CONST STEP mSessionPaths[] = {FRESH,
                                      {STEP_WAIT, 0, 300},
                                      FRESH};
 
+// Install PortareOS's screens, each against a fresh view.
+STATIC CONST STEP mSessionInstall[] = {
+  FRESH,           PRESS (DOWN, 2),   PRESS (SELECT, 1), FRESH,
+  PRESS (DOWN, 1), FRESH,             PRESS (UP, 1),     PRESS (SELECT, 1),
+  FRESH,           PRESS (DOWN, 3),   FRESH,             PRESS (UP, 2),
+  PRESS (SELECT, 1), FRESH,           PRESS (DOWN, 1),   FRESH,
+  PRESS (BACK, 1), FRESH,             PRESS (DOWN, 1),   PRESS (SELECT, 1),
+  FRESH,           ROTATE (90),       FRESH,             PRESS (BACK, 1),
+  FRESH,           PRESS (BACK, 1),   FRESH};
+
 // Rotation changes under every kind of screen.
 STATIC CONST STEP mSessionPaths2[] = {FRESH,
                                       PRESS (DOWN, 3),
@@ -719,6 +869,7 @@ STATIC CONST struct {
   SESSION ("models", mSessionModels),
   SESSION ("lines", mSessionLines),
   SESSION ("confirm", mSessionConfirm),
+  SESSION ("install", mSessionInstall),
   SESSION ("toast", mSessionToast),
   SESSION ("rotate", mSessionRotate),
   SESSION ("held", mSessionHeld),

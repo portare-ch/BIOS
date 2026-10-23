@@ -42,6 +42,9 @@
 #define MENU_START_RESULT_PICK_GONE 6u
 // What the boot list picked didn't start, so nothing else was tried.
 #define MENU_START_RESULT_PICK_FAILED 7u
+// Not a failure: the charger powered the device on, so the menu shows its
+// charging screen.
+#define MENU_START_RESULT_CHARGING 8u
 // Android's start came back.
 #define MENU_START_RESULT_ANDROID_FAILED 0x80u
 
@@ -73,9 +76,6 @@ typedef struct _MENU_HOST_STATE {
   BOOLEAN AltVolumeBoot;
 } MENU_HOST_STATE;
 
-// The device powered on for off-mode charging, so Android boots for its
-// charger screen. Set by the menu; read by MenuHostState.
-extern BOOLEAN gMenuHostChargerBoot;
 
 // A located host. The host keeps the protocol installed while the menu runs,
 // so a saved Protocol pointer P can be used again as (MENU_HOST){P}.

@@ -877,15 +877,16 @@ RunBoot (
   Charger =
     State->OffmodeCharging != 0 &&
     MenuHostAction (Host, OPENABL_MENU_ACTION_CHARGER_BOOT) == EFI_SUCCESS;
-  if (Charger) {
-    gMenuHostChargerBoot = TRUE;
-    MenuLog ("powered on by the charger");
+  // BIOS shows its own charging screen, with or without Android, unless
+  // the menu picked something to start.
+  if (Charger && !Once) {
+    MenuLog ("powered on by the charger: the charging screen");
+    return FastbootPath (Host, MENU_START_RESULT_CHARGING);
   }
   Alt = State->AltVolumeBoot;
-  // The menu's pick wins over the boot mode, the charger and Volume Up.
-  // Only the keys for fastboot, above, still apply.
-  Android = Once ? Once == MENU_ONCE_ANDROID
-                 : (State->BootMode != 0 || Charger) && !Alt;
+  // The menu's pick wins over the boot mode and Volume Up. Only the keys
+  // for fastboot, above, still apply.
+  Android = Once ? Once == MENU_ONCE_ANDROID : State->BootMode != 0 && !Alt;
   if (Android) {
     BOOLEAN Recovery = BootDecisionRecovery (
       &Start, Once == MENU_ONCE_ANDROID || QuirksAblSettings ().BootMode != 0
