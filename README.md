@@ -54,7 +54,7 @@ Keyboard arrows and Enter also work. Lists have a **Back** row.
 |---|---|
 | Boot | Opens the boot list. Selecting a system requests a one-shot boot without changing the saved boot order. |
 | Boot order | Switches between **PortareOS, Android** and **Android, PortareOS**. Shown when Android is available. |
-| Install PortareOS | Copies PortareOS from a PortareOS SD card to internal storage, with nothing else booted. **Dualboot** keeps Android: a first install shrinks Android's data partition to a chosen size, which resets Android; with PortareOS already next to Android it only replaces PortareOS's system, keeping its games, saves and settings. **Replace Android** removes Android, and any PortareOS already there, and gives PortareOS all of internal storage. Each shows the resulting space before it asks to confirm. |
+| Install PortareOS | Copies PortareOS from a PortareOS SD card to internal storage, with nothing else booted. **Dualboot** keeps Android: a first install shrinks Android's data partition to a chosen size, which resets Android; with PortareOS already next to Android it only replaces PortareOS's system, keeping its games, saves and settings. **Replace Android** removes Android, and any PortareOS already there, and gives PortareOS all of internal storage; Android's `vbmeta` is rewritten with verification disabled, since the `vbmeta_system` it chains is gone. Each shows the resulting space before it asks to confirm. |
 | Emergency download mode | Restarts into Qualcomm EDL mode, after confirmation. |
 | Restart | Restarts normally, using the saved default. |
 | Shut down | Powers off. |

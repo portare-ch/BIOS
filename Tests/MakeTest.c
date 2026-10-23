@@ -4,9 +4,9 @@
  */
 
 /**
-  MakeTest - runs GptTests, then writes images with Fat32Make and Ext4Make
-  for Tests/check.sh, which checks them with fsck.fat, mtools, e2fsck and
-  debugfs.
+  MakeTest - runs GptTests and checks Replace Android's vbmeta, then
+  writes images with Fat32Make and Ext4Make for Tests/check.sh, which
+  checks them with fsck.fat, mtools, e2fsck and debugfs.
 
   Usage: make-test DIR. Writes DIR/fat-*.img with the files it should
   hold under DIR/fat-*.files, and DIR/ext4-*.img with DIR/ext4-*.txt
@@ -26,6 +26,7 @@
 #include "Core/Ext4Make.h"
 #include "Core/Fat32.h"
 #include "Core/Fat32Make.h"
+#include "Core/Vbmeta.h"
 #include "Tests/Test.h"
 
 INT32 gTestFailures;
@@ -340,6 +341,37 @@ Ext4Refusals (VOID)
   CHECK (!Ext4Make (&Params, FileWrite, &Fd));
 }
 
+// Replace Android's vbmeta, field by field as libavb reads the header
+// (avb_vbmeta_image.h): it has to verify as unsigned with
+// VERIFICATION_DISABLED, so libavb follows no chained partition.
+STATIC VOID
+VbmetaHeader (VOID)
+{
+  UINT8 Header[VBMETA_HEADER_SIZE];
+  UINTN Nonzero = 0;
+
+  VbmetaDisabled (Header);
+  CHECK (memcmp (Header, "AVB0", 4) == 0);
+  // Required libavb version 1.0.
+  CHECK (ReadBe32 (Header + 4) == 1 && ReadBe32 (Header + 8) == 0);
+  // No authentication or auxiliary block, algorithm NONE.
+  CHECK (ReadBe64 (Header + 12) == 0 && ReadBe64 (Header + 20) == 0);
+  CHECK (ReadBe32 (Header + 28) == 0);
+  // Rollback index 0, flags, rollback index location 0.
+  CHECK (ReadBe64 (Header + 112) == 0);
+  CHECK (ReadBe32 (Header + 120) == VBMETA_FLAG_VERIFICATION_DISABLED);
+  CHECK (ReadBe32 (Header + 124) == 0);
+  // A NUL-terminated release string; everything else zero.
+  CHECK (Header[128] != 0 && Header[128 + 47] == 0);
+  for (UINTN Index = 4; Index < 128; Index++) {
+    Nonzero += Header[Index] != 0;
+  }
+  for (UINTN Index = 176; Index < VBMETA_HEADER_SIZE; Index++) {
+    Nonzero += Header[Index] != 0;
+  }
+  CHECK (Nonzero == 2);
+}
+
 int
 main (
   int   Argc,
@@ -351,6 +383,7 @@ main (
     return 2;
   }
   GptTests ();
+  VbmetaHeader ();
   FatRefusals ();
   FatImage (Argv[1], "fat-4k", 2ull << 30, 4096);
   FatImage (Argv[1], "fat-512", 512ull << 20, 512);

@@ -16,6 +16,7 @@
 #include "Core/Ext4Make.h"
 #include "Core/Fat32.h"
 #include "Core/Fat32Make.h"
+#include "Core/Vbmeta.h"
 #include "Efi/Files.h"
 #include "Efi/Disk.h"
 
@@ -50,6 +51,8 @@ EFI_GUID gEfiRNGAlgRawGuid = {
 #define MAX_FILES      4096
 #define MAX_DEPTH      8
 #define LABEL          "PORTAREOS"
+// Android's vbmeta partitions are 64 KiB; anything over this isn't one.
+#define VBMETA_MAX (1 * MIB)
 
 #define SAY(...) LogPrint (Log, "install: " __VA_ARGS__)
 
@@ -79,6 +82,16 @@ typedef struct {
   UINT64 First;
   UINT64 Blocks;
 } DISK;
+
+// Android's vbmeta_a and vbmeta_b, which Replace Android rewrites.
+STATIC CONST CHAR8 *CONST mVbmeta[2] = {"vbmeta_a", "vbmeta_b"};
+
+// A vbmeta partition: its disk and its blocks there.
+typedef struct {
+  EFI_BLOCK_IO_PROTOCOL *BlockIo;
+  UINT64                 First;
+  UINT64                 Blocks;
+} VBMETA_PART;
 
 STATIC VOID
 CardFree (IN OUT CARD *Card)
@@ -853,6 +866,107 @@ WriteTable (
   return EFI_SUCCESS;
 }
 
+// Finds vbmeta_a and vbmeta_b in the fixed disks' checked tables. FALSE
+// unless each is there exactly once, at a vbmeta's size.
+STATIC BOOLEAN
+FindVbmeta (
+  OUT VBMETA_PART Parts[2],
+  IN LOG_SINK     Log
+)
+{
+  EFI_HANDLE *Handles;
+  UINTN       Count    = LocateHandles (&gEfiBlockIoProtocolGuid, &Handles);
+  UINTN       Found[2] = {0};
+  BOOLEAN     Ok       = TRUE;
+
+  for (UINTN Index = 0; Index < Count; Index++) {
+    EFI_BLOCK_IO_PROTOCOL *BlockIo = DiskBlockIo (Handles[Index]);
+    OABL_BUFFER            Block   = {0};
+    OABL_BUFFER            Array   = {0};
+    GPT_HEADER             Header;
+    GPT_HEADER             Backup;
+
+    if (!BlockIo ||
+        !DiskCheckedTable (BlockIo, &Block, &Header, &Array, &Backup)) {
+      continue;
+    }
+    for (UINTN Entry = 0; Entry < Header.Entries; Entry++) {
+      for (UINTN Name = 0; Name < 2; Name++) {
+        UINT64 First;
+        UINT64 Last;
+
+        if (GptEntryNamed (
+              &Header, Array.Data, Array.Len, Entry, mVbmeta[Name]
+            ) &&
+            GptExtent (&Header, Array.Data, Array.Len, Entry, &First, &Last) &&
+            Last >= First && Found[Name]++ == 0) {
+          Parts[Name] = (VBMETA_PART){BlockIo, First, Last - First + 1};
+        }
+      }
+    }
+    BufferFree (&Block);
+    BufferFree (&Array);
+  }
+  if (Handles) {
+    gBS->FreePool (Handles);
+  }
+  for (UINTN Name = 0; Name < 2; Name++) {
+    UINT64 Bytes = Found[Name] == 1 ? Parts[Name].Blocks *
+                                        Parts[Name].BlockIo->Media->BlockSize
+                                    : 0;
+
+    if (Bytes < VBMETA_HEADER_SIZE || Bytes > VBMETA_MAX) {
+      SAY (
+        "%s: found %llu time(s), %llu bytes", mVbmeta[Name],
+        (UINT64)Found[Name], Bytes
+      );
+      Ok = FALSE;
+    }
+  }
+  return Ok;
+}
+
+// Leaves Android's vbmeta saying verification is disabled (Core/Vbmeta),
+// the rest of each partition zeroed, and reads it back. Android Verified
+// Boot then checks PortareOS's boot image without vbmeta_system, which is
+// gone.
+STATIC EFI_STATUS
+WriteVbmeta (
+  IN CONST VBMETA_PART Parts[2],
+  IN LOG_SINK          Log
+)
+{
+  EFI_STATUS Status = EFI_SUCCESS;
+
+  for (UINTN Name = 0; Name < 2 && Status == EFI_SUCCESS; Name++) {
+    EFI_BLOCK_IO_PROTOCOL *BlockIo = Parts[Name].BlockIo;
+    UINTN       Bytes = (UINTN)(Parts[Name].Blocks * BlockIo->Media->BlockSize);
+    UINT8      *Image = AllocateZeroPool (Bytes);
+    OABL_BUFFER Back  = {0};
+
+    if (!Image) {
+      return EFI_OUT_OF_RESOURCES;
+    }
+    VbmetaDisabled (Image);
+    Status = DiskWrite (BlockIo, Parts[Name].First, Image, Bytes);
+    if (Status == EFI_SUCCESS) {
+      Status = BlockIo->FlushBlocks (BlockIo);
+    }
+    if (Status == EFI_SUCCESS &&
+        (!DiskRead (BlockIo, Parts[Name].First, Bytes, &Back) ||
+         CompareMem (Back.Data, Image, Bytes) != 0)) {
+      Status = EFI_CRC_ERROR;
+    }
+    SAY (
+      "%s: verification disabled: %s", mVbmeta[Name],
+      StatusText (Status, (CHAR8[STATUS_TEXT_SIZE]){0})
+    );
+    BufferFree (&Back);
+    FreePool (Image);
+  }
+  return Status;
+}
+
 // Whether the battery is charged enough to write, by the firmware's own
 // test for flashing, as the ABL's fastboot asks it. TRUE where the firmware
 // can't tell (no battery, or an older protocol).
@@ -953,6 +1067,7 @@ InstallRun (
   EXT4_MAKE     Ext4 = {0};
   FAT32_VOLUME  Volume;
   FAT32_FILE    Kernel;
+  VBMETA_PART   Vbmeta[2];
   PROGRESS      Steps  = {Progress, Context, 1};
   BOOLEAN       Format;
   BOOLEAN       Shrink;
@@ -966,7 +1081,8 @@ InstallRun (
     SAY ("no PortareOS card");
     return EFI_NOT_FOUND;
   }
-  if (!FindDisk (&Disk, &Before, Log) || PathUnder (Card.Fs, Disk.Handle)) {
+  if (!FindDisk (&Disk, &Before, Log) || PathUnder (Card.Fs, Disk.Handle) ||
+      (Kind == INSTALL_REPLACE_ANDROID && !FindVbmeta (Vbmeta, Log))) {
     CardFree (&Card);
     return EFI_VOLUME_CORRUPTED;
   }
@@ -1015,6 +1131,13 @@ InstallRun (
   EraseOld (&Disk, Kind, Writes.Count == 0, Format, Log);
   if (Writes.Count) {
     Status = WriteTable (&Disk, &Writes, &Where, Log);
+    if (Status != EFI_SUCCESS) {
+      goto Done;
+    }
+  }
+  // Android's verified boot data chains the vbmeta_system just removed.
+  if (Kind == INSTALL_REPLACE_ANDROID) {
+    Status = WriteVbmeta (Vbmeta, Log);
     if (Status != EFI_SUCCESS) {
       goto Done;
     }
