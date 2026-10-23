@@ -17,10 +17,13 @@
     saves, is kept.
   - Replace Android removes Android's system and data partitions, with any
     PortareOS already there, and gives PortareOS all of their space.
+    vbmeta_a and vbmeta_b, which chain the removed vbmeta_system
+    partitions, are rewritten with verification disabled (Core/Vbmeta).
 
   In order: what gets replaced erased, through the firmware's handles for
   the partitions as they were (as fastboot erase does); the new table,
-  backup first, read back; the new partitions' starts zeroed; the storage
+  backup first, read back; for Replace Android, vbmeta, read back; the
+  new partitions' starts zeroed; the storage
   file system (Ext4Make);
   the card's files copied to the boot partition and read back; last the
   boot partition's FATs and boot sector (Fat32Make), so an interrupted
@@ -117,7 +120,8 @@ typedef VOID (*INSTALL_PROGRESS) (
 // Installs. AndroidBytes is what a first Dualboot leaves Android. Nothing
 // is written when it returns EFI_NOT_FOUND (no card or files on it),
 // EFI_VOLUME_CORRUPTED (the internal table can't be trusted or doesn't
-// allow Kind), EFI_NOT_READY (the battery is too low to flash) or
+// allow Kind, or Replace Android finds no vbmeta_a and vbmeta_b),
+// EFI_NOT_READY (the battery is too low to flash) or
 // EFI_VOLUME_FULL (the files don't fit). EFI_CRC_ERROR
 // means something written didn't read back the same; anything else is the
 // failing read or write's status.
