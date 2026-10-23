@@ -756,6 +756,24 @@ index 4684c88..73ac1e5 100644
    }
  }
  
+diff --git a/QcomModulePkg/Library/BootLib/PartitionTableUpdate.c b/QcomModulePkg/Library/BootLib/PartitionTableUpdate.c
+index 6cd565f..93728fb 100644
+--- a/QcomModulePkg/Library/BootLib/PartitionTableUpdate.c
++++ b/QcomModulePkg/Library/BootLib/PartitionTableUpdate.c
+@@ -1895,6 +1895,13 @@ FindBootableSlot (Slot *BootableSlot)
+     } else {
+       DEBUG ((EFI_D_INFO, "A/B retry count NOT decremented\n"));
+     }
++  } else if (IsBootDevImage ()) {
++    /* OpenABL: an image that isn't the slot's own (the menu's, fastboot
++     * boot) only borrows the slot's suffix. Its boot neither marks the slot
++     * unbootable nor switches slots. */
++    DEBUG ((EFI_D_INFO, "Slot %s is unbootable; kept for an image from "
++                        "elsewhere\n",
++            BootableSlot->Suffix));
+   } else {
+     DEBUG ((EFI_D_INFO, "Slot %s is unbootable, trying alternate slot\n",
+             BootableSlot->Suffix));
 diff --git a/QcomModulePkg/Library/BootLib/ShutdownServices.c b/QcomModulePkg/Library/BootLib/ShutdownServices.c
 index 4064b49..00119ab 100644
 --- a/QcomModulePkg/Library/BootLib/ShutdownServices.c
@@ -1193,10 +1211,23 @@ index c528a50..62ccbb5 100755
 +VOID FastbootTextMenuLoop (VOID);
  #endif
 diff --git a/QcomModulePkg/Library/avb/VerifiedBoot.c b/QcomModulePkg/Library/avb/VerifiedBoot.c
-index 012a75d..e89e6e0 100644
+index 012a75d..36f8409 100644
 --- a/QcomModulePkg/Library/avb/VerifiedBoot.c
 +++ b/QcomModulePkg/Library/avb/VerifiedBoot.c
-@@ -1818,7 +1818,7 @@ out:
+@@ -1798,7 +1798,11 @@ out:
+       avb_free (VBData);
+     }
+     Info->BootState = RED;
+-    if (Info->MultiSlotBoot) {
++    /* OpenABL: an image from elsewhere failing says nothing about the
++     * slot's own. */
++    if (Info->MultiSlotBoot && IsBootDevImage ()) {
++      DEBUG ((EFI_D_WARN, "The image isn't the slot's own: slot kept\n"));
++    } else if (Info->MultiSlotBoot) {
+       HandleActiveSlotUnbootable (FALSE);
+       /* HandleActiveSlotUnbootable should have swapped slots and
+        * reboot the device. If no bootable slot found, enter fastboot
+@@ -1818,7 +1822,7 @@ out:
    return Status;
  }
  
@@ -1205,7 +1236,7 @@ index 012a75d..e89e6e0 100644
  DisplayVerifiedBootScreen (BootInfo *Info)
  {
    EFI_STATUS Status = EFI_SUCCESS;
-@@ -2264,7 +2264,7 @@ get_ptn_name:
+@@ -2264,7 +2268,7 @@ get_ptn_name:
    }
  
    if (AVBVersion != AVB_LE) {
