@@ -4,8 +4,7 @@
  */
 
 /**
-  Disk - block I/O and partition tables on fixed disks, for the installer
-  and the device info, and whether Linux is on internal storage.
+  Disk - block I/O and partition tables on fixed disks, for the installer.
 
   Block I/O goes through page-aligned buffers, which satisfy any IoAlign.
 */
@@ -19,7 +18,7 @@
 
 #include "Base/Buffer.h"
 #include "Core/Gpt.h"
-#include "Efi/Serial.h"
+#include "Efi/Log.h"
 
 // Opens a disk's BlockIo shared, leaving the disk with its drivers. NULL if
 // there is none.
@@ -67,16 +66,6 @@ DiskCheckedTable (
   OUT GPT_HEADER           *Header,
   OUT OABL_BUFFER          *Array,
   OUT GPT_HEADER           *Backup
-);
-
-// Whether Linux is installed on internal storage: a partition on disk after
-// userdata in a table whose copies agree, or an image in userdata. The
-// first call connects the storage, looks and logs the answer; later calls
-// return the same answer.
-BOOLEAN
-DiskLinuxOnInternal (
-  IN UINT32   Chip,
-  IN LOG_SINK Log
 );
 
 #endif

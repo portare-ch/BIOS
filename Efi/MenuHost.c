@@ -12,8 +12,7 @@
 #include "Base/Memory.h"
 #include "Base/Text.h"
 #include "Efi/Abl.h"
-#include "Efi/Quirks.h"
-#include "Efi/UsbHost.h"
+#include "Efi/Variables.h"
 
 
 CONST CHAR8 *
@@ -79,27 +78,6 @@ MenuHostLocate (OUT MENU_HOST *Out)
   return TRUE;
 }
 
-// Android boots if the setting says so, on a charger boot, or if Volume Up
-// or Home was held on a boot that isn't fastboot's. A USB boot source falls
-// back to Auto when the ABL has no USB host. The alternative Volume Up boot
-// applies when it is on and Volume Up or Home was held.
-STATIC VOID
-OwnSettings (IN OUT MENU_HOST_STATE *State)
-{
-  QUIRKS_ABL_SETTINGS Settings = QuirksAblSettings ();
-  BOOT_DECISION_START Start    = MenuHostStateStart (State);
-
-  State->BootMode =
-    BootDecisionAndroid (&Start, Settings.BootMode != 0);
-  State->AblMode     = Settings.AblMode;
-  State->AltVolumeUp = Settings.AltVolumeUp;
-  State->BootSource  = Settings.BootSource == MENU_HOST_BOOT_SOURCE_USB &&
-                           !(State->Flags & OPENABL_MENU_STATE_USB_HOST)
-                         ? MENU_HOST_BOOT_SOURCE_AUTO
-                         : Settings.BootSource;
-  State->AltVolumeBoot =
-    BootDecisionAltBoot (&Start, Settings.AltVolumeUp != 0);
-}
 
 EFI_STATUS
 MenuHostState (
@@ -119,24 +97,13 @@ MenuHostState (
   Out->Entry           = Abl.Entry;
   Out->Key             = Abl.Key;
   CopyMem (Out->Version, Abl.Version, sizeof (Out->Version));
-  OwnSettings (Out);
-  return EFI_SUCCESS;
-}
+  // Android starts first by the Boot order, or with Volume Up held.
+  {
+    BOOT_DECISION_START Start = MenuHostStateStart (Out);
 
-// Actions that restart or power off the device.
-STATIC BOOLEAN
-Resets (IN UINT32 Action)
-{
-  switch (Action) {
-  case OPENABL_MENU_ACTION_START:
-  case OPENABL_MENU_ACTION_RESTART_BOOTLOADER:
-  case OPENABL_MENU_ACTION_RECOVERY:
-  case OPENABL_MENU_ACTION_EMERGENCY:
-  case OPENABL_MENU_ACTION_POWER_OFF:
-  case OPENABL_MENU_ACTION_ALTERNATE_SLOT:
-    return TRUE;
+    Out->BootMode = BootDecisionAndroid (&Start, VariablesAndroidFirst ());
   }
-  return FALSE;
+  return EFI_SUCCESS;
 }
 
 EFI_STATUS
@@ -145,10 +112,6 @@ MenuHostAction (
   IN UINT32           Action
 )
 {
-  // Undo any USB host bring-up before the device resets.
-  if (Resets (Action)) {
-    UsbHostBeforeReset ();
-  }
   return Host->Protocol->DoAction (Host->Protocol, Action);
 }
 
@@ -165,36 +128,6 @@ MenuHostLog (
 )
 {
   Host->Protocol->Log (Host->Protocol, (CONST CHAR8 *)Line);
-  AblConsoleProgramLine (Line);
-}
-
-VOID EFIAPI
-MenuHostLogFn (IN CONST CHAR8 *Line OPTIONAL)
-{
-  MENU_HOST Host;
-  UINTN     Length = 0;
-  CHAR8    *Lossy;
-
-  if (!Line) {
-    return;
-  }
-  if (!MenuHostLocate (&Host)) {
-    return;
-  }
-  while (Line[Length]) {
-    Length++;
-  }
-  // Copy only when the line isn't valid UTF-8.
-  if (Utf8Valid ((CONST UINT8 *)Line, Length)) {
-    MenuHostLog (&Host, (CONST CHAR8 *)Line);
-    return;
-  }
-  Lossy = Utf8Lossy ((CONST UINT8 *)Line, Length);
-  if (!Lossy) {
-    return;
-  }
-  MenuHostLog (&Host, Lossy);
-  FreePool (Lossy);
 }
 
 EFI_STATUS

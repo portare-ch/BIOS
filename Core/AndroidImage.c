@@ -145,23 +145,6 @@ AndroidBootImageFree (IN OUT ANDROID_BOOT_IMAGE *Image)
   Image->Cmdline = NULL;
 }
 
-UINT64
-AndroidBootImageTotalSize (IN CONST ANDROID_BOOT_IMAGE *Image)
-{
-  CONST ANDROID_SECTION *Sections[] = {&Image->Kernel, &Image->Ramdisk,
-                                       &Image->Second, &Image->RecoveryDtbo,
-                                       &Image->Dtb};
-  UINT64                 Max        = 0;
-
-  for (UINTN Index = 0; Index < sizeof (Sections) / sizeof (*Sections);
-       Index++) {
-    if (Sections[Index]->Offset + Sections[Index]->Size > Max) {
-      Max = Sections[Index]->Offset + Sections[Index]->Size;
-    }
-  }
-  return Max;
-}
-
 BOOLEAN
 AndroidDecodeOsVersion (
   IN UINT32               Value,
@@ -179,57 +162,6 @@ AndroidDecodeOsVersion (
     .Month = (UINT8)(Value & 0xf),
   };
   return TRUE;
-}
-
-ANDROID_BOOT_COMMAND
-AndroidParseBcb (
-  IN CONST UINT8 *Misc,
-  IN UINTN        Size
-)
-{
-  ANDROID_BOOT_COMMAND Command = {ANDROID_BOOT_COMMAND_NONE, ""};
-  OABL_TEXT            Text    = {(CONST CHAR8 *)Misc, 0};
-
-  if (Size > ANDROID_BCB_COMMAND_LEN) {
-    Size = ANDROID_BCB_COMMAND_LEN;
-  }
-  while (Text.Len < Size && Misc[Text.Len]) {
-    Text.Len++;
-  }
-  if (TextEqStr (Text, "boot-recovery")) {
-    Command.Kind = ANDROID_BOOT_COMMAND_RECOVERY;
-  } else if (TextEqStr (Text, "bootonce-bootloader")) {
-    Command.Kind = ANDROID_BOOT_COMMAND_BOOTLOADER_ONCE;
-  } else if (Text.Len) {
-    // Anything but printable ASCII means an erased or never-written
-    // partition, not a command.
-    for (UINTN Index = 0; Index < Text.Len; Index++) {
-      if (Misc[Index] < 0x21 || Misc[Index] > 0x7e) {
-        return Command;
-      }
-    }
-    Command.Kind = ANDROID_BOOT_COMMAND_OTHER;
-    for (UINTN Index = 0; Index < Text.Len; Index++) {
-      Command.Other[Index] = Text.Ptr[Index];
-    }
-  }
-  return Command;
-}
-
-VOID
-AndroidBcbCommand (
-  IN CONST CHAR8 *Command,
-  OUT UINT8       Out[ANDROID_BCB_COMMAND_LEN]
-)
-{
-  UINTN Length = AsciiStrLen (Command);
-
-  if (Length > ANDROID_BCB_COMMAND_LEN - 1) {
-    Length = ANDROID_BCB_COMMAND_LEN - 1;
-  }
-  for (UINTN Index = 0; Index < ANDROID_BCB_COMMAND_LEN; Index++) {
-    Out[Index] = Index < Length ? (UINT8)Command[Index] : 0;
-  }
 }
 
 BOOLEAN
@@ -266,43 +198,4 @@ AndroidFindDtbs (
     }
   }
   return TRUE;
-}
-
-BOOLEAN
-AndroidDtbWindow (
-  IN CONST ANDROID_BOOT_IMAGE *Image,
-  OUT UINT64                  *Offset,
-  OUT UINT64                  *Length
-)
-{
-  UINT64 KernelSize = Image->Kernel.Size;
-  UINT64 Window;
-
-  if (Image->Dtb.Size > 0) {
-    *Offset = Image->Dtb.Offset;
-    *Length = Image->Dtb.Size;
-    return TRUE;
-  }
-  if (KernelSize == 0) {
-    return FALSE;
-  }
-  Window =
-    KernelSize < ANDROID_DTB_TAIL_WINDOW ? KernelSize : ANDROID_DTB_TAIL_WINDOW;
-  *Offset = Image->Kernel.Offset + KernelSize - Window;
-  *Length = Window;
-  return TRUE;
-}
-
-BOOLEAN
-AndroidWindowTooShort (
-  IN CONST ANDROID_BOOT_IMAGE *Image,
-  IN UINT64                    Offset,
-  IN UINT64                    Length,
-  IN CONST UINT8              *Region,
-  IN UINTN                     Size
-)
-{
-  (VOID)Offset;
-  return Image->Dtb.Size == 0 && Length < Image->Kernel.Size && Size >= 4 &&
-         Same (Region, mFdtMagic, 4);
 }

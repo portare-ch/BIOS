@@ -4,7 +4,7 @@
  */
 
 /**
-  BootDecision - boot mode and boot source decisions.
+  BootDecision - what power-on starts, and the drives' order.
 */
 
 #include "Core/BootDecision.h"
@@ -31,15 +31,6 @@ BootDecisionAndroid (
 )
 {
   return AndroidSetting || BootDecisionUpHeld (Start);
-}
-
-BOOLEAN
-BootDecisionAltBoot (
-  IN CONST BOOT_DECISION_START *Start,
-  IN BOOLEAN                    AltSetting
-)
-{
-  return AltSetting && BootDecisionUpHeld (Start);
 }
 
 BOOLEAN
@@ -92,39 +83,6 @@ BootSourceMediumInternal (IN BOOT_SOURCE_MEDIUM Medium)
   return !Medium.External && !Medium.Usb;
 }
 
-BOOT_SOURCE
-BootSourceEffective (
-  IN BOOT_SOURCE Source,
-  IN BOOLEAN     CfwOnInternal
-)
-{
-  return Source == BOOT_SOURCE_INTERNAL && !CfwOnInternal ? BOOT_SOURCE_SD
-                                                          : Source;
-}
-
-BOOLEAN
-BootSourceAllows (
-  IN BOOT_SOURCE        Source,
-  IN BOOLEAN            AltVolumeBoot,
-  IN BOOT_SOURCE_MEDIUM Medium
-)
-{
-  if (AltVolumeBoot) {
-    return Medium.External;
-  }
-  switch (Source) {
-  case BOOT_SOURCE_USB:
-    return Medium.Usb;
-  case BOOT_SOURCE_SD:
-    return Medium.External && !Medium.Usb;
-  case BOOT_SOURCE_AUTO:
-    return !Medium.Usb;
-  case BOOT_SOURCE_INTERNAL:
-    return BootSourceMediumInternal (Medium);
-  }
-  return FALSE;
-}
-
 // Sorts internal drives first. The elements are indices into Context, the
 // media array.
 STATIC BOOLEAN
@@ -142,9 +100,6 @@ InternalFirst (
 
 UINTN
 BootSourceSelect (
-  IN BOOT_SOURCE               Source,
-  IN BOOLEAN                   CfwOnInternal,
-  IN BOOLEAN                   AltVolumeBoot,
   IN CONST BOOT_SOURCE_MEDIUM *Media,
   IN UINTN                     Count,
   OUT UINTN                   *Order
@@ -152,15 +107,12 @@ BootSourceSelect (
 {
   UINTN Kept = 0;
 
-  Source = BootSourceEffective (Source, CfwOnInternal);
   for (UINTN Index = 0; Index < Count; Index++) {
     Order[Index] = Index;
   }
-  if (Source == BOOT_SOURCE_AUTO && !AltVolumeBoot) {
-    SortBy (Order, Count, sizeof (*Order), InternalFirst, (VOID *)Media);
-  }
+  SortBy (Order, Count, sizeof (*Order), InternalFirst, (VOID *)Media);
   for (UINTN Index = 0; Index < Count; Index++) {
-    if (BootSourceAllows (Source, AltVolumeBoot, Media[Order[Index]])) {
+    if (!Media[Order[Index]].Usb) {
       Order[Kept++] = Order[Index];
     }
   }

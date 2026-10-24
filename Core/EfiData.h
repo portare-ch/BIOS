@@ -31,31 +31,8 @@
 // Removable media default boot file for AArch64 (UEFI section 3.5.1.1).
 #define UEFI_DEFAULT_BOOT_FILE "\\EFI\\BOOT\\BOOTAA64.EFI"
 
-// Writes the Boot#### variable name. 9 bytes are enough.
-VOID
-UefiBootVarName (
-  IN UINT16  Number,
-  OUT CHAR8 *Out,
-  IN UINTN   Size
-);
-
 typedef struct _UEFI_U16_LIST
 OABL_VEC (UINT16) UEFI_U16_LIST;
-
-// Decodes little-endian UINT16s. An odd last byte is ignored.
-BOOLEAN
-UefiParseU16List (
-  IN CONST UINT8    *Bytes,
-  IN UINTN           Size,
-  OUT UEFI_U16_LIST *Out
-);
-
-BOOLEAN
-UefiU16ListBytes (
-  IN CONST UINT16 *Values,
-  IN UINTN         Count,
-  OUT OABL_BUFFER *Out
-);
 
 // EFI_LOAD_OPTION. Owns all its fields.
 typedef struct _UEFI_LOAD_OPTION {
@@ -65,23 +42,6 @@ typedef struct _UEFI_LOAD_OPTION {
   OABL_BUFFER DevicePath;
   OABL_BUFFER OptionalData;
 } UEFI_LOAD_OPTION;
-
-// Fails on a truncated load option.
-BOOLEAN
-UefiLoadOptionParse (
-  IN CONST UINT8       *Bytes,
-  IN UINTN              Size,
-  OUT UEFI_LOAD_OPTION *Out
-);
-
-BOOLEAN
-UefiLoadOptionToBytes (
-  IN CONST UEFI_LOAD_OPTION *Option,
-  OUT OABL_BUFFER           *Out
-);
-
-VOID
-UefiLoadOptionFree (IN OUT UEFI_LOAD_OPTION *Option);
 
 STATIC inline BOOLEAN
 UefiLoadOptionIsActive (IN CONST UEFI_LOAD_OPTION *Option)
@@ -113,12 +73,6 @@ UefiNodeData (IN CONST UEFI_NODE *Node)
   return (OABL_BYTES){Node->Bytes.Ptr + 4, Node->Bytes.Len - 4};
 }
 
-BOOLEAN
-UefiNodeEq (
-  IN CONST UEFI_NODE *A,
-  IN CONST UEFI_NODE *B
-);
-
 // Steps through the nodes of the first instance of a path. Start with
 // *At = 0. Fails at the end node or on malformed input.
 BOOLEAN
@@ -129,31 +83,7 @@ UefiNextNode (
   OUT UEFI_NODE  *Out
 );
 
-// Returns TRUE if both paths have the same nodes, as UefiNextNode sees them.
-BOOLEAN
-UefiSameNodes (
-  IN CONST UINT8 *A,
-  IN UINTN        ASize,
-  IN CONST UINT8 *B,
-  IN UINTN        BSize
-);
-
 extern CONST UINT8 gUefiEndNode[4];
-
-// Joins the nodes of Parts into one device path with an end node.
-BOOLEAN
-UefiJoin (
-  IN CONST OABL_BYTES *Parts,
-  IN UINTN             Count,
-  OUT OABL_BUFFER     *Out
-);
-
-// Builds a media FilePath node for a backslash-separated Path.
-BOOLEAN
-UefiFilePathNode (
-  IN CONST CHAR8  *Path,
-  OUT OABL_BUFFER *Out
-);
 
 // Copies the GPT partition GUID of the path's last HD() node, as the GPT
 // entry stores it. FALSE if there is none.
@@ -178,24 +108,6 @@ UefiPartUuid (
   OUT CHAR8       Out[UEFI_PART_UUID_SIZE]
 );
 
-// Returns the joined FilePath text of a device path, or NULL if it has
-// none. Caller frees the result.
-CHAR8 *
-UefiFilePathText (
-  IN CONST UINT8 *DevicePath,
-  IN UINTN        Size
-);
-
-// Returns TRUE if the nodes of Prefix match the start of DevicePath. An
-// empty Prefix never matches.
-BOOLEAN
-UefiStartsWith (
-  IN CONST UINT8 *DevicePath,
-  IN UINTN        Size,
-  IN CONST UINT8 *Prefix,
-  IN UINTN        PrefixSize
-);
-
 // How a load option's device path must be resolved before LoadImage.
 typedef enum {
   // Points into a firmware volume (setup menus, built-in shells). Not an OS
@@ -212,34 +124,9 @@ typedef enum {
   UEFI_PATH_DEVICE_ONLY,
 } UEFI_PATH_KIND;
 
-UEFI_PATH_KIND
-UefiClassify (
-  IN CONST UINT8 *DevicePath,
-  IN UINTN        Size
-);
-
-// Name of the kind for the log.
-CONST CHAR8 *
-UefiPathKindName (IN UEFI_PATH_KIND Kind);
-
-// Splits a path at the first FilePath node into a device part and a file
-// part, each with an end node.
-BOOLEAN
-UefiSplitFile (
-  IN CONST UINT8  *DevicePath,
-  IN UINTN         Size,
-  OUT OABL_BUFFER *Device,
-  OUT OABL_BUFFER *File
-);
-
 // Offsets of HeaderSize and CRC32 in EFI_TABLE_HEADER (UEFI section 4.2).
 #define UEFI_TABLE_HEADER_SIZE  12
 #define UEFI_TABLE_HEADER_CRC32 16
-
-// Recomputes a table's CRC32 after an entry changed, as the firmware does:
-// zero the field, then take the CRC-32 of HeaderSize bytes.
-VOID
-UefiTableHeaderCrc (IN OUT UINT8 *Table);
 
 // EFI_RT_PROPERTIES_TABLE
 
@@ -259,44 +146,11 @@ UefiTableHeaderCrc (IN OUT UINT8 *Table);
 #define UEFI_RT_QUERY_VARIABLE_INFO           0x2000u
 #define UEFI_RT_ALL                           0x3FFFu
 
-// Writes { Version = 1, Length = 8, RuntimeServicesSupported }.
-VOID
-UefiRtPropertiesTable (
-  IN UINT32 Supported,
-  OUT UINT8 Out[8]
-);
-
 // EFI_SYSTEM_RESOURCE_TABLE (UEFI section 23.4)
 
 #define UEFI_ESRT_FW_TYPE_SYSTEM 1
 // The header and one 40-byte entry.
 #define UEFI_ESRT_ONE_SIZE 56
-
-// Writes an ESRT with one entry for FwClass (an EFI_GUID's 16 bytes): the
-// firmware type and version, lowest supported version 0, no capsule flags,
-// and a successful last attempt at Version.
-VOID
-UefiEsrtOne (
-  IN CONST UINT8 FwClass[16],
-  IN UINT32      Type,
-  IN UINT32      Version,
-  OUT UINT8      Out[UEFI_ESRT_ONE_SIZE]
-);
-
-// "1.2" as 0x00010002: the major number in the high 16 bits and the minor in
-// the low, as fwupd's "pair" version format reads it. 0 if Version doesn't
-// start with a number.
-UINT32
-UefiVersionPair (IN CONST CHAR8 *Version);
-
-// Fails if the table is too short.
-BOOLEAN
-UefiParseRtProperties (
-  IN CONST UINT8 *Table,
-  IN UINTN        Size,
-  OUT UINT16     *Version,
-  OUT UINT32     *Supported
-);
 
 // Copies a DTB and grows its totalsize by Pad bytes of free space, so the
 // next stage can add /chosen properties in place. Fails if Blob isn't a DTB.

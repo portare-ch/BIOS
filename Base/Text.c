@@ -37,30 +37,6 @@ TextEqStr (
   return TextEq (A, TextOf (B));
 }
 
-STATIC CHAR8
-Lower (IN CHAR8 Char)
-{
-  return Char >= 'A' && Char <= 'Z' ? (CHAR8)(Char + 32) : Char;
-}
-
-BOOLEAN
-TextEqNoCase (
-  IN OABL_TEXT    A,
-  IN CONST CHAR8 *B
-)
-{
-  UINTN Length = AsciiStrLen (B);
-  if (A.Len != Length) {
-    return FALSE;
-  }
-  for (UINTN Index = 0; Index < Length; Index++) {
-    if (Lower (A.Ptr[Index]) != Lower (B[Index])) {
-      return FALSE;
-    }
-  }
-  return TRUE;
-}
-
 BOOLEAN
 TextStartsWith (
   IN OABL_TEXT    Text,
@@ -70,43 +46,6 @@ TextStartsWith (
   UINTN Length = AsciiStrLen (Prefix);
   return Length <= Text.Len &&
          TextEq ((OABL_TEXT){Text.Ptr, Length}, (OABL_TEXT){Prefix, Length});
-}
-
-BOOLEAN
-TextStartsWithNoCase (
-  IN OABL_TEXT    Text,
-  IN CONST CHAR8 *Prefix
-)
-{
-  UINTN Length = AsciiStrLen (Prefix);
-  return Length <= Text.Len &&
-         TextEqNoCase ((OABL_TEXT){Text.Ptr, Length}, Prefix);
-}
-
-BOOLEAN
-TextEndsWithNoCase (
-  IN OABL_TEXT    Text,
-  IN CONST CHAR8 *Suffix
-)
-{
-  UINTN Length = AsciiStrLen (Suffix);
-
-  return Text.Len >= Length &&
-         TextEqNoCase (TextSub (Text, Text.Len - Length, Text.Len), Suffix);
-}
-
-BOOLEAN
-TextEndsWith (
-  IN OABL_TEXT    Text,
-  IN CONST CHAR8 *Suffix
-)
-{
-  UINTN Length = AsciiStrLen (Suffix);
-  return Length <= Text.Len &&
-         TextEq (
-           (OABL_TEXT){Text.Ptr + Text.Len - Length, Length},
-           (OABL_TEXT){Suffix, Length}
-         );
 }
 
 BOOLEAN
@@ -227,72 +166,6 @@ TextTrim (IN OABL_TEXT Text)
 }
 
 BOOLEAN
-TextSplitOnce (
-  IN OABL_TEXT   Text,
-  IN CHAR8       Separator,
-  OUT OABL_TEXT *Before,
-  OUT OABL_TEXT *After
-)
-{
-  UINTN At;
-  if (!TextFindChar (Text, Separator, &At)) {
-    return FALSE;
-  }
-  *Before = (OABL_TEXT){Text.Ptr, At};
-  *After  = (OABL_TEXT){Text.Ptr + At + 1, Text.Len - At - 1};
-  return TRUE;
-}
-
-BOOLEAN
-TextNextLine (
-  IN OUT OABL_TEXT *Rest,
-  OUT OABL_TEXT    *Line
-)
-{
-  UINTN At;
-  if (!Rest->Len) {
-    return FALSE;
-  }
-  if (TextFindChar (*Rest, '\n', &At)) {
-    *Line = (OABL_TEXT){Rest->Ptr, At};
-    Rest->Ptr += At + 1;
-    Rest->Len -= At + 1;
-    // Only a \r before a \n is dropped. A last line without a \n keeps a
-    // bare \r.
-    if (Line->Len && Line->Ptr[Line->Len - 1] == '\r') {
-      Line->Len--;
-    }
-  } else {
-    *Line = *Rest;
-    Rest->Ptr += Rest->Len;
-    Rest->Len = 0;
-  }
-  return TRUE;
-}
-
-BOOLEAN
-TextNextWord (
-  IN OUT OABL_TEXT *Rest,
-  OUT OABL_TEXT    *Word
-)
-{
-  UINTN End = 0;
-  UINTN Length;
-  *Rest = TextTrimStart (*Rest);
-  if (!Rest->Len) {
-    return FALSE;
-  }
-  while (End < Rest->Len && !SpaceAt (TextSub (*Rest, End, Rest->Len))) {
-    Utf8Decode (Rest->Ptr + End, Rest->Len - End, &Length);
-    End += Length;
-  }
-  *Word = (OABL_TEXT){Rest->Ptr, End};
-  Rest->Ptr += End;
-  Rest->Len -= End;
-  return TRUE;
-}
-
-BOOLEAN
 TextNextSplit (
   IN OUT OABL_TEXT *Rest,
   IN CHAR8          Separator,
@@ -314,40 +187,6 @@ TextNextSplit (
     Rest->Len = 0;
     *Done     = TRUE;
   }
-  return TRUE;
-}
-
-BOOLEAN
-TextParseU64 (
-  IN OABL_TEXT Text,
-  IN UINT32    Base,
-  OUT UINT64  *Value
-)
-{
-  UINT64 Number = 0;
-  if (Text.Len && *Text.Ptr == '+') {
-    Text.Ptr++;
-    Text.Len--;
-  }
-  if (!Text.Len) {
-    return FALSE;
-  }
-  for (UINTN Index = 0; Index < Text.Len; Index++) {
-    CHAR8  Char = Text.Ptr[Index];
-    UINT32 Digit;
-    if (Char >= '0' && Char <= '9') {
-      Digit = (UINT32)(Char - '0');
-    } else if (Base == 16 && Lower (Char) >= 'a' && Lower (Char) <= 'f') {
-      Digit = (UINT32)(Lower (Char) - 'a' + 10);
-    } else {
-      return FALSE;
-    }
-    if (Digit >= Base || Number > (MAX_UINT64 - Digit) / Base) {
-      return FALSE;
-    }
-    Number = Number * Base + Digit;
-  }
-  *Value = Number;
   return TRUE;
 }
 
@@ -431,15 +270,6 @@ StringAppend (
 }
 
 VOID
-StringAppendChar (
-  IN OUT OABL_STRING *Builder,
-  IN CHAR8            Char
-)
-{
-  StringAppendN (Builder, &Char, 1);
-}
-
-VOID
 StringAppendCodePoint (
   IN OUT OABL_STRING *Builder,
   IN UINT32           CodePoint
@@ -489,19 +319,6 @@ StringVPrint (
   va_end (Again);
 }
 
-VOID
-StringPrint (
-  IN OUT OABL_STRING *Builder,
-  IN CONST CHAR8     *Format,
-  ...
-)
-{
-  va_list Args;
-  va_start (Args, Format);
-  StringVPrint (Builder, Format, Args);
-  va_end (Args);
-}
-
 CHAR8 *
 StringTake (IN OUT OABL_STRING *Builder)
 {
@@ -518,16 +335,6 @@ StringFree (IN OUT OABL_STRING *Builder)
 {
   FreePool (Builder->Str);
   *Builder = (OABL_STRING){0};
-}
-
-VOID
-StringClear (IN OUT OABL_STRING *Builder)
-{
-  Builder->Len    = 0;
-  Builder->Failed = FALSE;
-  if (Builder->Str) {
-    Builder->Str[0] = 0;
-  }
 }
 
 // UTF-8 and UTF-16

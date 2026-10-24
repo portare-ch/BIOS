@@ -284,48 +284,6 @@ FilesReadRange (
 }
 
 BOOLEAN
-FilesRead (
-  IN EFI_HANDLE    Fs,
-  IN CONST CHAR8  *Path,
-  IN UINTN         Limit,
-  OUT OABL_BUFFER *Out
-)
-{
-  EFI_FILE_PROTOCOL *File = OpenPath (Fs, Path);
-  EFI_FILE_INFO     *Info;
-  BOOLEAN            Ok = FALSE;
-
-  if (!File) {
-    return FALSE;
-  }
-  if (FileInfo (File, &Info) == EFI_SUCCESS) {
-    UINT64 Size = Info->FileSize;
-    FreePool (Info);
-    Ok = Size <= Limit && ReadInto (File, (UINTN)Size, Out);
-  }
-  File->Close (File);
-  return Ok;
-}
-
-CHAR8 *
-FilesReadText (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  IN UINTN        Limit
-)
-{
-  OABL_BUFFER Bytes = {0};
-  CHAR8      *Text;
-
-  if (!FilesRead (Fs, Path, Limit, &Bytes)) {
-    return NULL;
-  }
-  Text = Utf8Lossy (Bytes.Data, Bytes.Len);
-  BufferFree (&Bytes);
-  return Text;
-}
-
-BOOLEAN
 FilesReadPart (
   IN EFI_HANDLE    Fs,
   IN CONST CHAR8  *Path,
@@ -518,71 +476,6 @@ FilesEntriesFree (IN OUT FILES_DIR_ENTRIES *Entries)
   VecFree (Entries);
 }
 
-EFI_STATUS
-FilesRename (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  IN CONST CHAR8 *NewName
-)
-{
-  CHAR16            *WidePath = Ucs2 (Path);
-  CHAR16            *WideName = Ucs2 (NewName);
-  CHAR16            *Name;
-  EFI_FILE_PROTOCOL *File;
-  EFI_FILE_INFO     *Old;
-  EFI_FILE_INFO     *Info;
-  UINTN              Units;
-  UINTN              Size;
-  EFI_STATUS         Status;
-
-  if (!WidePath || !WideName) {
-    FreePool (WidePath);
-    FreePool (WideName);
-    return EFI_INVALID_PARAMETER;
-  }
-  File = OpenFile (Fs, WidePath, EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE);
-  FreePool (WidePath);
-  if (!File) {
-    FreePool (WideName);
-    return EFI_NOT_FOUND;
-  }
-  Status = FileInfo (File, &Old);
-  if (Status != EFI_SUCCESS) {
-    goto Done;
-  }
-  // New info: header, name and NUL, zero-padded to a multiple of 8. SetInfo
-  // gets the padded size.
-  Units = Utf16Len (WideName);
-  Size  = AlignUp (SIZE_OF_EFI_FILE_INFO + (Units + 1) * sizeof (CHAR16), 8);
-  Info  = AllocateZeroPool (Size);
-  if (!Info) {
-    FreePool (Old);
-    Status = EFI_BUFFER_TOO_SMALL;
-    goto Done;
-  }
-  Info->Size             = Size;
-  Info->FileSize         = Old->FileSize;
-  Info->PhysicalSize     = Old->PhysicalSize;
-  Info->CreateTime       = Old->CreateTime;
-  Info->LastAccessTime   = Old->LastAccessTime;
-  Info->ModificationTime = Old->ModificationTime;
-  Info->Attribute        = Old->Attribute;
-  FreePool (Old);
-  Name = (CHAR16 *)((UINT8 *)Info + SIZE_OF_EFI_FILE_INFO);
-  for (UINTN Index = 0; Index <= Units; Index++) {
-    Name[Index] = WideName[Index];
-  }
-  Status = File->SetInfo (File, &gEfiFileInfoGuid, Size, Info);
-  FreePool (Info);
-  if (Status == EFI_SUCCESS) {
-    Status = File->Flush (File);
-  }
-Done:
-  File->Close (File);
-  FreePool (WideName);
-  return Status;
-}
-
 CHAR8 *
 FilesVolumeLabel (IN EFI_HANDLE Fs)
 {
@@ -656,69 +549,6 @@ PathsHandlePath (
   return BufferFrom (Out, DevicePath, Size);
 }
 
-// Checks that Path holds a complete device path within Size bytes. Bytes
-// after the end-of-entire node are allowed.
-STATIC BOOLEAN
-ValidPath (
-  IN CONST UINT8 *Path,
-  IN UINTN        Size
-)
-{
-  UINTN At = 0;
-
-  for (;;) {
-    UINTN Len;
-
-    if (Size - At < 4) {
-      return FALSE;
-    }
-    Len = ReadLe16 (Path + At + 2);
-    if (Len < 4 || Len > Size - At) {
-      return FALSE;
-    }
-    if (Path[At] == UEFI_TYPE_END && Path[At + 1] == UEFI_END_ENTIRE) {
-      return TRUE;
-    }
-    At += Len;
-  }
-}
-
-CHAR8 *
-PathsDescribe (
-  IN CONST UINT8 *Path,
-  IN UINTN        Size
-)
-{
-  EFI_DEVICE_PATH_TO_TEXT_PROTOCOL *ToText = NULL;
-  EFI_HANDLE                       *Handles;
-  UINTN                             Count;
-  CHAR16                           *Text;
-  CHAR8                            *Ascii;
-
-  if (!ValidPath (Path, Size)) {
-    return AsciiStrDup ("?");
-  }
-  Count = LocateHandles (&gEfiDevicePathToTextProtocolGuid, &Handles);
-  if (Count) {
-    ToText = GetProtocol (Handles[0], &gEfiDevicePathToTextProtocolGuid);
-  }
-  if (Handles) {
-    gBS->FreePool (Handles);
-  }
-  if (!ToText) {
-    return AsciiStrDup ("?");
-  }
-  Text = ToText->ConvertDevicePathToText (
-    (CONST EFI_DEVICE_PATH_PROTOCOL *)Path, TRUE, TRUE
-  );
-  if (!Text) {
-    return AsciiStrDup ("?");
-  }
-  Ascii = Utf16ToStr ((CONST UINT16 *)Text);
-  gBS->FreePool (Text);
-  return Ascii;
-}
-
 // Volumes
 
 BOOT_SOURCE_MEDIUM
@@ -759,12 +589,7 @@ VolumesFileSystems (IN OUT VOLUME_FS_LIST *Out)
 }
 
 VOID
-VolumesAllowed (
-  IN BOOT_SOURCE              Source,
-  IN BOOLEAN                  CfwOnInternal,
-  IN BOOLEAN                  AltVolumeBoot,
-  IN OUT VOLUMES_HANDLE_LIST *Out
-)
+VolumesBoot (IN OUT VOLUMES_HANDLE_LIST *Out)
 {
   VOLUME_FS_LIST      FileSystems = {0};
   BOOT_SOURCE_MEDIUM *Media;
@@ -782,9 +607,7 @@ VolumesAllowed (
     for (UINTN Index = 0; Index < FileSystems.Count; Index++) {
       Media[Index] = FileSystems.Items[Index].Medium;
     }
-    Count = BootSourceSelect (
-      Source, CfwOnInternal, AltVolumeBoot, Media, FileSystems.Count, Order
-    );
+    Count = BootSourceSelect (Media, FileSystems.Count, Order);
     if (VecReserve (Out, Count)) {
       for (UINTN Index = 0; Index < Count; Index++) {
         Out->Items[Out->Count++] = FileSystems.Items[Order[Index]].Handle;

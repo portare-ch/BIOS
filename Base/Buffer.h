@@ -42,32 +42,6 @@ BufferAppendU8 (
   IN UINT8            Value
 );
 BOOLEAN
-BufferAppendLe16 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT16           Value
-);
-BOOLEAN
-BufferAppendLe32 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT32           Value
-);
-BOOLEAN
-BufferAppendLe64 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT64           Value
-);
-BOOLEAN
-BufferAppendBe32 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT32           Value
-);
-BOOLEAN
-BufferAppendBe64 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT64           Value
-);
-
-BOOLEAN
 BufferAppendZeros (
   IN OUT OABL_BUFFER *Buffer,
   IN UINTN            Length
@@ -100,13 +74,6 @@ BufferBytes (IN CONST OABL_BUFFER *Buffer)
 {
   return (OABL_BYTES){Buffer->Data, Buffer->Len};
 }
-
-// Returns the bytes and empties the buffer. Caller frees the result.
-UINT8 *
-BufferTake (
-  IN OUT OABL_BUFFER *Buffer,
-  OUT UINTN          *Length OPTIONAL
-);
 
 // Arrays of any type
 
@@ -259,14 +226,6 @@ WriteBe32 (
   }
 }
 
-// Bounds-checked reads at offset At. They fail past the end of Size bytes.
-BOOLEAN
-GetLe16 (
-  IN CONST UINT8 *Bytes,
-  IN UINTN        Size,
-  IN UINTN        At,
-  OUT UINT16     *Value
-);
 BOOLEAN
 GetLe32 (
   IN CONST UINT8 *Bytes,
@@ -288,14 +247,6 @@ GetBe32 (
   IN UINTN        At,
   OUT UINT32     *Value
 );
-BOOLEAN
-GetBe64 (
-  IN CONST UINT8 *Bytes,
-  IN UINTN        Size,
-  IN UINTN        At,
-  OUT UINT64     *Value
-);
-
 // Checks At + Length <= Size without overflowing.
 STATIC inline BOOLEAN
 InBounds (
@@ -317,7 +268,7 @@ AlignUp (
   return (Value + Alignment - 1) & ~(Alignment - 1);
 }
 
-// Stable insertion sort. The lists are short (drives, models, boot
+// Stable insertion sort. The lists are short (drives, boot
 // entries), and a general sort would take kilobytes the ABL image has no
 // room for.
 VOID

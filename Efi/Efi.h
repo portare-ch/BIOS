@@ -73,10 +73,6 @@ CompareGuid (
   IN CONST EFI_GUID *Guid2
 );
 
-// Starts Image and frees any exit data it returns.
-EFI_STATUS
-StartImageFreeExitData (IN EFI_HANDLE Image);
-
 // Gets the memory map: *Count descriptors, *DescriptorSize bytes apart.
 // Caller frees it with FreePool. NULL on failure.
 UINT8 *

@@ -4,9 +4,8 @@
 #   https://github.com/OpenHandheldCollective
 # Fetches the build's sources into build/, each at a pinned commit:
 #
-#   Scripts/fetch.sh [microui] [edk2] [qtestsign]   (default: all three)
+#   Scripts/fetch.sh [edk2] [qtestsign]   (default: both)
 #
-# build/microui    microui, which lays out the menu
 # build/edk2       Qualcomm's ABL source (tianocore edk2 from CodeLinaro) with
 #                  Abl/openabl.patch applied and Abl/QcomModulePkg's files
 #                  added. When either changes, the tree is reset and patched
@@ -18,8 +17,6 @@ cd "$(dirname "$0")/.."
 EDK2_URL=https://git.codelinaro.org/clo/la/abl/tianocore/edk2.git
 EDK2_TAG=KERNEL.PLATFORM.3.0.r23-02400-kernel.0
 EDK2_COMMIT=aef4e86045bd151a54d33bab8ae5e8e62462a8f4
-MICROUI_URL=https://github.com/rxi/microui.git
-MICROUI_COMMIT=0850aba860959c3e75fb3e97120ca92957f9d057
 QTESTSIGN_URL=https://github.com/msm8916-mainline/qtestsign.git
 QTESTSIGN_COMMIT=f3df53a5f0e37ccee076541f30f9d5b8340fc2d3
 PATCH=Abl/openabl.patch
@@ -42,13 +39,6 @@ fetch() {
   if [ "$(git -C "$dir" rev-parse -q --verify "$commit^{commit}")" != "$commit" ]; then
     echo "fetch: $url: $ref isn't $commit" >&2
     exit 1
-  fi
-}
-
-microui() {
-  fetch build/microui "$MICROUI_URL" "$MICROUI_COMMIT" "$MICROUI_COMMIT"
-  if [ "$(git -C build/microui rev-parse HEAD 2> /dev/null)" != "$MICROUI_COMMIT" ]; then
-    git -C build/microui -c advice.detachedHead=false checkout -q --detach "$MICROUI_COMMIT"
   fi
 }
 
@@ -77,10 +67,10 @@ qtestsign() {
   fi
 }
 
-[ $# -gt 0 ] || set -- microui edk2 qtestsign
+[ $# -gt 0 ] || set -- edk2 qtestsign
 for what in "$@"; do
   case $what in
-    microui | edk2 | qtestsign) "$what" ;;
-    *) echo "fetch: unknown $what (microui, edk2, qtestsign)" >&2; exit 1 ;;
+    edk2 | qtestsign) "$what" ;;
+    *) echo "fetch: unknown $what (edk2, qtestsign)" >&2; exit 1 ;;
   esac
 done

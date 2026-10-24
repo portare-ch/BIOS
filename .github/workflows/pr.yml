@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Debug build of the Nova's image for each pull request, and the host tests.
+# The Nova's image built for each pull request, and the host tests.
 name: Pull request
 
 on:
@@ -52,7 +52,7 @@ jobs:
           fi
 
       - name: Build
-        run: ./build.sh all --debug
+        run: ./build.sh all
 
       - name: Keep the log
         if: failure()
@@ -64,13 +64,11 @@ jobs:
       - name: Collect the images
         run: |
           mkdir dist
-          cp build/out/abl_signed-SM8550.elf dist/abl_signed-SM8550-debug.elf
-          cp build/out/openabl-recovery-flashable-sm8550.zip \
-            dist/openabl-recovery-flashable-sm8550-debug.zip
+          cp build/out/abl_signed-SM8550.elf build/out/openabl-recovery-flashable-sm8550.zip dist/
 
       - uses: actions/upload-artifact@v7
         with:
-          name: openabl-debug-pr${{ github.event.pull_request.number }}
+          name: portare-bios-pr${{ github.event.pull_request.number }}
           path: dist
           retention-days: 14
           compression-level: 0

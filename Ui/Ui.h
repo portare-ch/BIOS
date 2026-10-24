@@ -17,40 +17,17 @@
 
 #include "Base/OablBase.h"
 
-#include "Core/Settings.h"
-
-typedef struct _DEVICE_INFO {
-  CHAR8 Soc[64];
-  CHAR8 Ram[32];
-  CHAR8 Storage[48];
-  CHAR8 SdCard[48];
-  CHAR8 Firmware[64];
-} DEVICE_INFO;
+// What the menu starts first: the Boot order setting.
+typedef enum { BOOT_MODE_LINUX, BOOT_MODE_ANDROID } BOOT_MODE;
 
 // Input and commands
 
 typedef enum { INPUT_UP, INPUT_DOWN, INPUT_SELECT, INPUT_BACK } INPUT;
 
-// How the user drives the menu. It only changes the footer hints.
-typedef enum {
-  SCHEME_HANDHELD, // volume up/down and power
-  SCHEME_KEYBOARD, // arrow keys, Enter and Esc
-} SCHEME;
-
 typedef enum {
   REBOOT_NORMAL,
-  REBOOT_LOADER, // back into the menu
-  REBOOT_RECOVERY,
   REBOOT_EDL,
-  REBOOT_OTHER_SLOT,
 } REBOOT_TARGET;
-
-// Switches in the Debug section, which only debug builds have.
-typedef struct _EXPERIMENTS {
-  BOOLEAN UsbLive;
-  BOOLEAN Quiesce;
-  BOOLEAN PanelLinesOff;
-} EXPERIMENTS;
 
 // What COMMAND_BOOT starts. ORDER is what power-on starts, the first of
 // the boot order.
@@ -66,12 +43,8 @@ typedef enum {
   COMMAND_BOOT_ENTRY, // Arg is the entry index
   COMMAND_REBOOT,     // Arg is a REBOOT_TARGET
   COMMAND_POWER_OFF,
-  COMMAND_SAVE_SETTINGS,
-  COMMAND_SCAN_MODELS,
+  COMMAND_SAVE_BOOT_MODE,
   COMMAND_INSTALL, // Arg is an INSTALL_CHOICE; InstallAndroid is Android's share
-  COMMAND_DEVICE_INFO,
-  COMMAND_LOG,
-  COMMAND_SAVE_EXPERIMENTS, // saves Experiments
 } COMMAND_KIND;
 
 // Work for the platform. Run it after the next frame, so the screen
@@ -79,14 +52,12 @@ typedef enum {
 typedef struct _COMMAND {
   COMMAND_KIND Kind;
   INT32        Arg;
-  EXPERIMENTS  Experiments;
 } COMMAND;
 
 typedef enum {
-  BOOT_ERROR_NO_IMAGE,       // nothing bootable on the source
-  BOOT_ERROR_LOAD_FAILED,    // an image failed to load or start
-  BOOT_ERROR_ANDROID,        // Android boot isn't available
-  BOOT_ERROR_MODEL_NOT_SET,  // a model is needed for the devicetree
+  BOOT_ERROR_NO_IMAGE,       // nothing bootable on internal storage or the card
+  BOOT_ERROR_LOAD_FAILED,    // a boot image failed to verify or start
+  BOOT_ERROR_ANDROID,        // Android isn't installed
   BOOT_ERROR_ANDROID_FAILED, // booting Android (boot_a/b) returned
   // The boot list's pick: its drive is gone, or it didn't start. ErrorDetail
   // names it, or is empty after a restart.
@@ -100,58 +71,13 @@ typedef enum {
 
 // What the view draws
 
-// Gfx/Icons.c draws these; the menu itself no longer does.
-typedef enum {
-  ICON_PLAY,
-  ICON_REFRESH,
-  ICON_LIFEBUOY,
-  ICON_CPU,
-  ICON_SWITCH,
-  ICON_TERMINAL,
-  ICON_VOLUME,
-  ICON_SD_CARD,
-  ICON_BATTERY,
-  ICON_GAMEPAD,
-  ICON_TRASH,
-  ICON_POWER,
-  ICON_CHEVRON_UP,
-  ICON_CHEVRON_DOWN,
-  ICON_CHEVRON_RIGHT,
-  ICON_SELECTOR,
-  ICON_ARROWS_VERTICAL,
-  ICON_ARROW_BACK,
-  ICON_ARROW_LEFT,
-  ICON_INFO,
-  ICON_ALERT,
-  ICON_CIRCLE,
-  ICON_CIRCLE_CHECK,
-  ICON_DATABASE,
-  ICON_STACK,
-  ICON_MONITOR,
-  ICON_ROTATE,
-  ICON_ENTER,
-  ICON_CLOCK,
-  ICON_WORLD,
-  ICON_FORK,
-  ICON_MESSAGE,
-  ICON_PHOTO,
-  ICON_USB,
-  ICON_MONITOR_OFF,
-  ICON_PLUG,
-  ICON_COUNT
-} ICON;
-
 typedef enum {
   ITEM_BOOT, // opens the boot list
   ITEM_BOOT_ORDER,
-  ITEM_INSTALL,   // PortareOS, from the SD card to internal storage
+  ITEM_INSTALL, // PortareOS, from the SD card to internal storage
   ITEM_EDL,
   ITEM_RESTART,
   ITEM_POWER_OFF,
-  // Debug builds only.
-  ITEM_USB_LIVE,
-  ITEM_QUIESCE,
-  ITEM_PANEL_LINES,
 } ITEM;
 
 typedef struct _ROW {
@@ -161,7 +87,7 @@ typedef struct _ROW {
 
 typedef struct _ITEM_VIEW {
   CONST CHAR8 *Label;
-  CHAR8        Value[MODEL_LEN + 16]; // "" for none
+  CHAR8        Value[48]; // "" for none
   // The status line while the row is focused, or NULL for none.
   CONST CHAR8 *Help;
   // What Power does on the row, for the footer.
@@ -170,13 +96,10 @@ typedef struct _ITEM_VIEW {
 
 typedef enum {
   SCREEN_MENU,
-  SCREEN_SCANNING,
-  SCREEN_MODELS,
   SCREEN_ENTRIES, // the boot list
   SCREEN_CONFIRM,
   SCREEN_BOOTING,
   SCREEN_ERROR,
-  SCREEN_LINES,        // the device info, or the log
   SCREEN_INSTALL,      // Install PortareOS's two choices
   SCREEN_INSTALL_SIZE, // a first Dualboot: what Android keeps
   SCREEN_INSTALLING,   // takes no input
@@ -232,54 +155,28 @@ typedef struct _LIST_STATE {
   UINTN Scroll;
 } LIST_STATE;
 
-#define MAX_ROWS    40
-#define MAX_MODELS  64
-#define MAX_ENTRIES 32
-#define MAX_LINES   512
+#define MAX_ROWS    16
+#define MAX_ENTRIES 8
 // What a first Dualboot offers Android to keep.
 #define MAX_ANDROID_SIZES 6
 
-typedef struct _MODEL {
-  CHAR8  Name[MODEL_LEN];
-  UINT16 Rotation;   // or ROTATION_NONE
-  CHAR8  Source[64]; // where the devicetree was found
-} MODEL;
-
-// What a boot entry is. Named in the current language when drawn.
+// What a boot list row starts.
 typedef enum {
-  ENTRY_KIND_BLS,
-  ENTRY_KIND_UKI,
-  ENTRY_KIND_EXTLINUX,
-  ENTRY_KIND_DEFAULT_FILE,
-  ENTRY_KIND_BOOT_IMAGE,
-  ENTRY_KIND_ANDROID, // Android's own boot partitions
+  ENTRY_KIND_BOOT_IMAGE, // a drive's PortareOS (or other Linux) boot image
+  ENTRY_KIND_ANDROID,    // Android's own boot partitions
 } ENTRY_KIND;
 
 // A system the boot list offers: its name, and where it boots from.
 typedef struct _ENTRY_VIEW {
-  CHAR8      Title[96];   // the system, such as PortareOS
-  CHAR8      Version[64]; // "" for none
-  CHAR8      Drive[64];   // the drive's name
+  CHAR8      Title[96]; // the system, such as PortareOS
   ENTRY_KIND Kind;
   BOOLEAN    Removable; // on the SD card, not internal storage
-  BOOLEAN    Bad;       // no tries left (Automatic Boot Assessment)
 } ENTRY_VIEW;
 
-typedef struct _TEXT_LINE {
-  CONST CHAR8 *Label; // "" for a bare line (the log)
-  CHAR8        Value[256];
-} TEXT_LINE;
-
 typedef struct _APP {
-  SETTINGS      Settings;
-  SETTINGS_CAPS Caps;
-  DEVICE_INFO   Info;
-  SCHEME        Scheme;
-  CONST CHAR8  *Version;
-  BOOLEAN       Debug; // show the Debug section
-  // The panel's size in pixels, before any rotation.
-  UINT32 PhysicalW, PhysicalH;
-  UINT16 FirmwareRotation;
+  BOOT_MODE    BootMode;
+  BOOLEAN      Android; // Android is installed, or may be
+  CONST CHAR8 *Version;
 
   SCREEN     Screen;
   CONFIRM    Confirm;
@@ -293,10 +190,6 @@ typedef struct _APP {
 
   ITEM       FocusItem;
   LIST_STATE Menu;
-
-  MODEL      Models[MAX_MODELS];
-  UINTN      ModelCount;
-  LIST_STATE ModelList;
 
   ENTRY_VIEW Entries[MAX_ENTRIES];
   UINTN      EntryCount;
@@ -318,106 +211,53 @@ typedef struct _APP {
   BOOLEAN Charger;
   UINT32  BatteryMv;
 
-  // The device info or the log. LinesFrom is the menu item it was opened
-  // from, focused again on the way back.
-  TEXT_LINE    Lines[MAX_LINES];
-  UINTN        LineCount;
-  CONST CHAR8 *LinesTitle;
-  ITEM         LinesFrom;
-  LIST_STATE   InfoList;
+  INT32 Booting; // the entry picked from the list, or -1
 
-  EXPERIMENTS Experiments;
-  INT32       Booting; // the entry picked from the list, or -1
-
-  CHAR8   Toast[160];
-  UINT64  ToastUntil; // 0 for no toast
-  BOOLEAN Countdown;
-  UINT64  CountdownUntil;
+  CHAR8  Toast[160];
+  UINT64 ToastUntil; // 0 for no toast
   // Clock in milliseconds, from the last call that passed it.
   UINT64 Now;
   // Set when the state changes. ViewSync clears it.
   BOOLEAN Dirty;
-  // Whole seconds left at the last tick. A change marks the state dirty.
-  UINT64 ShownCountdown;
 } APP;
 
 // Starts the app on the menu. Version is kept, not copied.
 VOID
 AppInit (
-  OUT APP                *A,
-  IN CONST SETTINGS      *Settings,
-  IN CONST SETTINGS_CAPS *Caps,
-  IN CONST DEVICE_INFO   *Info,
-  IN SCHEME               Scheme,
-  IN CONST CHAR8         *Version
+  OUT APP        *A,
+  IN BOOT_MODE    BootMode,
+  IN BOOLEAN      Android,
+  IN CONST CHAR8 *Version
 );
 
-// Decides what happens at power-on. With ForceMenu (a key held, or a
-// restart into the menu) the menu stays. Otherwise it counts down the menu
-// timeout, or boots at once if the timeout is 0.
-COMMAND
-AppStart (
-  IN OUT APP *A,
-  IN UINT64   Now,
-  IN BOOLEAN  ForceMenu
-);
-
-// Advances the clock to Now. Hides a toast that is due, and starts the
-// boot when the countdown runs out.
+// Advances the clock to Now and hides a toast that is due.
 COMMAND
 AppTick (
   IN OUT APP *A,
   IN UINT64   Now
 );
 
-// Acts on one input. The first input during the countdown only stops it.
+// Acts on one input.
 COMMAND
 AppInput (
   IN OUT APP *A,
   IN INPUT    Input
 );
 
-COMMAND
-AppOpenModels (IN OUT APP *A);
-
 VOID
-AppSetSettings (
-  IN OUT APP        *A,
-  IN CONST SETTINGS *Settings
+AppSetBootMode (
+  IN OUT APP  *A,
+  IN BOOT_MODE BootMode
 );
 
 VOID
-AppSetCaps (
-  IN OUT APP             *A,
-  IN CONST SETTINGS_CAPS *Caps
-);
-
-// W and H are the panel's size before any rotation.
-VOID
-AppSetPhysicalSize (
+AppSetAndroid (
   IN OUT APP *A,
-  IN UINT32   W,
-  IN UINT32   H
+  IN BOOLEAN  Android
 );
 
-// Sets the rotation the firmware already applies (180 where XBL scans a
-// panel out upside down). Auto adds it to the devicetree's rotation.
-VOID
-AppSetFirmwareRotation (
-  IN OUT APP *A,
-  IN UINT16   Degrees
-);
-
-VOID
-AppSetExperiments (
-  IN OUT APP           *A,
-  IN CONST EXPERIMENTS *Experiments
-);
-
-// Lists from the platform are copied, up to MAX_ENTRIES, MAX_MODELS and
-// MAX_LINES.
-
-// Sets the boot entries and scrolls their list back to the top.
+// Sets the boot entries, up to MAX_ENTRIES, and scrolls their list back to
+// the top.
 VOID
 AppSetEntries (
   IN OUT APP          *A,
@@ -425,35 +265,10 @@ AppSetEntries (
   IN UINTN             Count
 );
 
-// Shows the models the scan found, focused on the current one.
-VOID
-AppOnModels (
-  IN OUT APP     *A,
-  IN CONST MODEL *Models,
-  IN UINTN        Count
-);
-
-VOID
-AppOnDeviceInfo (
-  IN OUT APP         *A,
-  IN CONST TEXT_LINE *Lines,
-  IN UINTN            Count
-);
-
-// Shows the log scrolled to the newest line, keeping the newest that fit.
-VOID
-AppOnLog (
-  IN OUT APP            *A,
-  IN CONST CHAR8 *CONST *Lines,
-  IN UINTN               Count
-);
-
-// Ok FALSE means the boot failed for Error, with Detail for
-// BOOT_ERROR_LOAD_FAILED. Ok TRUE means the started image returned.
+// Shows why the boot failed: Error, with Detail for BOOT_ERROR_LOAD_FAILED.
 VOID
 AppOnBootResult (
   IN OUT APP     *A,
-  IN BOOLEAN      Ok,
   IN BOOT_ERROR   Error,
   IN CONST CHAR8 *Detail OPTIONAL
 );
@@ -510,7 +325,7 @@ AppOnInstalled (
   IN BOOLEAN      Changed
 );
 
-// Shows the charging screen instead of the menu, with no countdown.
+// Shows the charging screen instead of the menu.
 VOID
 AppStartCharging (IN OUT APP *A);
 
@@ -537,19 +352,6 @@ AppOnFailed (
   IN CONST CHAR8 *Message
 );
 
-// Shows Message as a toast.
-VOID
-AppNotify (
-  IN OUT APP     *A,
-  IN CONST CHAR8 *Message
-);
-
-// Returns the rotation to present with, in degrees clockwise. With Auto and
-// no model, a portrait framebuffer gets 270. Handhelds usually mount
-// portrait panels sideways, and 270 is the common case (Pocket Max, RP5).
-UINT16
-AppDesiredRotation (IN CONST APP *A);
-
 // For the view
 
 // Fills Rows (MAX_ROWS long) with headers and items and returns the count.
@@ -574,26 +376,10 @@ AppItemView (
   OUT ITEM_VIEW *View
 );
 
-// Returns the title of the entry being started (the first one for Start),
-// or NULL when there are no entries.
+// Returns the title of the entry being started, or NULL when none was
+// picked from the list.
 CONST CHAR8 *
 AppBootTitle (IN CONST APP *A);
-
-
-
-// Returns TRUE during the countdown, with the seconds left rounded up.
-BOOLEAN
-AppCountdownSeconds (
-  IN CONST APP *A,
-  OUT UINT64   *Seconds
-);
-
-// For callers that allocate APP and SETTINGS elsewhere.
-UINTN
-AppSize (VOID);
-
-UINTN
-AppSettingsSize (VOID);
 
 // Keys
 //

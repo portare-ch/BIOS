@@ -5,7 +5,7 @@
 
 /**
   Files - file access by file system handle and path, device paths, the
-  volumes a boot source allows, and raw FAT32 reads.
+  volumes PortareOS starts from, and raw FAT32 reads.
 
   Paths are UTF-8, backslash-separated from the root. Files are opened
   read-only unless noted and closed before returning. Results are newly
@@ -23,7 +23,6 @@
 #include "Base/Buffer.h"
 
 #include "Core/BootDecision.h"
-#include "Core/Settings.h"
 
 // Reads up to Length bytes of Path (UCS-2) from Offset. Returns less if the
 // file ends first, FALSE if it can't be opened or read.
@@ -34,24 +33,6 @@ FilesReadRange (
   IN UINT64        Offset,
   IN UINTN         Length,
   OUT OABL_BUFFER *Out
-);
-
-// Reads the whole file at Path. Fails if it is larger than Limit bytes.
-BOOLEAN
-FilesRead (
-  IN EFI_HANDLE    Fs,
-  IN CONST CHAR8  *Path,
-  IN UINTN         Limit,
-  OUT OABL_BUFFER *Out
-);
-
-// Reads a text file as UTF-8, replacing invalid sequences. Returns NULL if
-// FilesRead fails.
-CHAR8 *
-FilesReadText (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  IN UINTN        Limit
 );
 
 // FilesReadRange with a UTF-8 path.
@@ -120,18 +101,6 @@ FilesList (
 VOID
 FilesEntriesFree (IN OUT FILES_DIR_ENTRIES *Entries);
 
-// Renames Path to NewName in the same directory with SetInfo, the way
-// systemd-boot renames entries for boot counting. Returns
-// EFI_INVALID_PARAMETER for a name that doesn't fit UCS-2, EFI_NOT_FOUND if
-// the file doesn't open, EFI_BUFFER_TOO_SMALL when out of memory, else the
-// firmware's status.
-EFI_STATUS
-FilesRename (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  IN CONST CHAR8 *NewName
-);
-
 // Returns the trimmed volume label, or NULL if it is unset, empty or
 // "NO NAME". Caller frees it.
 CHAR8 *
@@ -147,15 +116,7 @@ PathsHandlePath (
   OUT OABL_BUFFER *Out
 );
 
-// Converts the device path at Path to text for logs, or "?" if it can't.
-// Returns NULL only when out of memory.
-CHAR8 *
-PathsDescribe (
-  IN CONST UINT8 *Path,
-  IN UINTN        Size
-);
-
-// Volumes: the file systems a boot source allows, in the order to try them,
+// Volumes: the file systems PortareOS starts from, in the order to try them,
 // by the rules in Core/BootDecision.
 
 typedef struct _HANDLE_LIST
@@ -177,14 +138,10 @@ typedef struct _VOLUME_FS_LIST OABL_VEC (VOLUME_FS) VOLUME_FS_LIST;
 VOID
 VolumesFileSystems (IN OUT VOLUME_FS_LIST *Out);
 
-// Appends the file systems to try for Source to Out, in order.
+// Appends the file systems to boot from to Out: internal storage, then the
+// SD card.
 VOID
-VolumesAllowed (
-  IN BOOT_SOURCE              Source,
-  IN BOOLEAN                  CfwOnInternal,
-  IN BOOLEAN                  AltVolumeBoot,
-  IN OUT VOLUMES_HANDLE_LIST *Out
-);
+VolumesBoot (IN OUT VOLUMES_HANDLE_LIST *Out);
 
 // RawFat: reads files straight off a FAT32 partition through its BlockIo,
 // for when XBL's FAT driver fails a read. Core/Fat32.c does the parsing.

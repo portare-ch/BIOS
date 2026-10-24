@@ -4,15 +4,15 @@
  */
 
 /**
-  Main - renders the menu's screens to PNG on the host.
+  Main - renders the menu's screens to PNG on the host, on the Nova's
+  960 x 1280 panel turned 90 degrees.
 
     openabl-menu-sim [--out DIR] [--filter TEXT] [--check]
 
-  For every panel and rotation it writes the main menu as the user sees it
-  (*-view.png) and as the panel receives it (*-scanout.png, rotated). A few
-  panel and rotation pairs also get every other screen. --check instead
-  runs sessions of key presses and compares each frame with a full redraw
-  and with a freshly built view.
+  It writes each screen as the user sees it (NAME.png), and the main menu
+  also as the panel receives it (menu-scanout.png). --check instead runs
+  sessions of key presses and compares each frame with a full redraw and
+  with a freshly built view.
 */
 
 #include <stdio.h>
@@ -20,23 +20,16 @@
 #include <string.h>
 #include <zlib.h>
 
-#include "Core/Settings.h"
 #include "Base/Text.h"
 #include "Base/Memory.h"
 #include "Ui/Lang.h"
 #include "Ui/Ui.h"
 #include "View/View.h"
 
-STATIC CONST INT32 mPanels[][2] = {{1080, 1920}, {960, 1280},  {720, 1280},
-                                   {1440, 2560}, {1920, 1080}, {1240, 1080},
-                                   {1280, 800}};
-STATIC CONST INT32 mRotations[] = {0, 90, 180, 270};
-// These get every screen: portrait and landscape 16:9, landscape 4:3 and
-// 1280x800.
-STATIC CONST INT32 mFullSet[][3] = {{1080, 1920, 0},
-                                    {1080, 1920, 270},
-                                    {960, 1280, 90},
-                                    {1280, 800, 0}};
+// The Nova's panel, and how far the menu turns its picture.
+#define PANEL_W  960
+#define PANEL_H  1280
+#define ROTATION 90
 
 STATIC UINT32  mClockMs;
 STATIC UINT32 *mLogical, *mPhysical;
@@ -128,43 +121,10 @@ WritePng (
   free (Compressed);
 }
 
-// Sample device info, models and boot entries
-
-STATIC VOID
-SampleInfo (OUT DEVICE_INFO *Info)
-{
-  *Info = (DEVICE_INFO){0};
-  AsciiStrCopy (Info->Soc, sizeof (Info->Soc), "Snapdragon 865 (SM8250)");
-  AsciiStrCopy (Info->Ram, sizeof (Info->Ram), "8 GB");
-  AsciiStrCopy (Info->Storage, sizeof (Info->Storage), "128 GB UFS");
-  AsciiStrCopy (Info->SdCard, sizeof (Info->SdCard), "512 GB");
-  AsciiStrCopy (Info->Firmware, sizeof (Info->Firmware), "simulator");
-}
-
-STATIC CONST MODEL mModels[] = {
-  {"Retroid Pocket 5", 270, "SD card \\dtbs"},
-  {"Retroid Pocket Mini", 90, "SD card \\dtbs"},
-  {"Retroid Pocket Mini V2", 90, "SD card \\dtbs"},
-  {"Retroid Pocket Flip 2", 270, "SD card \\dtbs"},
-  {"AYN Thor Lite", 90, "SD card \\dtbs"},
-  {"MANGMI Pocket Max", 270, "SD card \\dtbs"},
-  {"Mangmi Air Y Pro", ROTATION_NONE, "SD card \\dtbs"},
-};
-
-STATIC UINTN
-SampleModels (OUT CONST MODEL **Models)
-{
-  *Models = mModels;
-  return sizeof (mModels) / sizeof (mModels[0]);
-}
-
 // The boot list on a Nova with PortareOS inside and a PortareOS card.
 STATIC CONST ENTRY_VIEW mEntries[] = {
-  {.Title = "PortareOS", .Drive = "PORTAREOS", .Kind = ENTRY_KIND_BOOT_IMAGE},
-  {.Title     = "PortareOS",
-   .Drive     = "PORTAREOS",
-   .Kind      = ENTRY_KIND_BOOT_IMAGE,
-   .Removable = TRUE},
+  {.Title = "PortareOS", .Kind = ENTRY_KIND_BOOT_IMAGE},
+  {.Title = "PortareOS", .Kind = ENTRY_KIND_BOOT_IMAGE, .Removable = TRUE},
   {.Title = "Android", .Kind = ENTRY_KIND_ANDROID},
 };
 
@@ -187,25 +147,10 @@ STATIC CONST INSTALL_INFO mInstall = {
 
 // Screens
 
-STATIC SETTINGS_CAPS
-SampleCaps (VOID)
-{
-  return (SETTINGS_CAPS){
-    .Android = TRUE, .UsbHost = TRUE, .CfwOnInternal = TRUE};
-}
-
 STATIC VOID
-MakeApp (
-  OUT APP           *A,
-  IN CONST SETTINGS *Settings
-)
+MakeApp (OUT APP *A)
 {
-  DEVICE_INFO   Info;
-  SETTINGS_CAPS Caps     = SampleCaps ();
-  SETTINGS      Language = *Settings;
-  SampleInfo (&Info);
-  Language.Language = LANG_EN;
-  AppInit (A, &Language, &Caps, &Info, SCHEME_HANDHELD, MENU_VERSION);
+  AppInit (A, BOOT_MODE_LINUX, TRUE, MENU_VERSION);
   AppSetEntries (A, mEntries, sizeof (mEntries) / sizeof (mEntries[0]));
   AppSetInstall (A, &mInstall);
 }
@@ -225,19 +170,6 @@ SMenu (
   (VOID)A, (VOID)Now;
 }
 
-STATIC VOID
-SCountdown (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  SETTINGS Settings     = A->Settings;
-  Settings.MenuTimeoutS = 5;
-  MakeApp (A, &Settings);
-  AppStart (A, Now, FALSE);
-  AppTick (A, Now + 1200);
-}
-
 // After Replace Android: only PortareOS starts.
 STATIC VOID
 SNoAndroid (
@@ -245,11 +177,8 @@ SNoAndroid (
   IN UINT64   Now
 )
 {
-  SETTINGS_CAPS Caps = SampleCaps ();
-
   (VOID)Now;
-  Caps.Android = FALSE;
-  AppSetCaps (A, &Caps);
+  AppSetAndroid (A, FALSE);
 }
 
 // What Boot order does, and the CHANGE it takes.
@@ -260,35 +189,6 @@ SBootOrder (
 )
 {
   (VOID)Now;
-  AppInput (A, INPUT_DOWN);
-}
-
-// A debug build's menu doesn't fit, so it scrolls to the last item.
-STATIC VOID
-SScrolled (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  SETTINGS_CAPS Caps = SampleCaps ();
-
-  (VOID)Now;
-  Caps.Embedded = TRUE;
-  AppSetCaps (A, &Caps);
-  A->Debug = TRUE;
-  AppInput (A, INPUT_UP);
-}
-
-STATIC VOID
-SModels (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  CONST MODEL *Models;
-  UINTN        Count = SampleModels (&Models);
-  (VOID)Now;
-  AppOnModels (A, Models, Count);
   AppInput (A, INPUT_DOWN);
 }
 
@@ -368,17 +268,18 @@ SErrorNoImage (
 )
 {
   (VOID)Now;
-  AppOnBootResult (A, FALSE, BOOT_ERROR_NO_IMAGE, NULL);
+  AppOnBootResult (A, BOOT_ERROR_NO_IMAGE, NULL);
 }
 
+// Verified boot refused PortareOS's boot image.
 STATIC VOID
-SErrorModel (
+SErrorLoad (
   IN OUT APP *A,
   IN UINT64   Now
 )
 {
   (VOID)Now;
-  AppOnBootResult (A, FALSE, BOOT_ERROR_MODEL_NOT_SET, NULL);
+  AppOnBootResult (A, BOOT_ERROR_LOAD_FAILED, gStrings->ErrBootImageFailed);
 }
 
 STATIC VOID
@@ -388,7 +289,7 @@ SToast (
 )
 {
   (VOID)Now;
-  AppNotify (A, "Settings saved");
+  AppOnFailed (A, gStrings->AblSettingFailed);
 }
 
 // The SD card was taken out while its PortareOS was picked.
@@ -602,13 +503,10 @@ STATIC CONST struct {
   SESSION_SETUP Setup;
 } mScreens[] = {
   {"menu", SMenu},
-  {"menu-countdown", SCountdown},
   {"menu-no-android", SNoAndroid},
   {"menu-boot-order", SBootOrder},
-  {"menu-scrolled", SScrolled},
   {"boot-list", SBootList},
   {"boot-list-sd", SBootListSd},
-  {"models", SModels},
   {"confirm-edl", SConfirmEdl},
   {"install", SInstall},
   {"install-replace", SInstallReplace},
@@ -629,9 +527,9 @@ STATIC CONST struct {
   {"booting-sd", SBootingSd},
   {"booting-android", SBootingAndroid},
   {"error-no-image", SErrorNoImage},
+  {"error-load", SErrorLoad},
   {"error-pick-gone", SErrorPickGone},
   {"error-pick-failed", SErrorPickFailed},
-  {"error-model", SErrorModel},
   {"toast", SToast},
 };
 
@@ -642,32 +540,23 @@ STATIC APP mApp;
 STATIC VOID
 Render (
   IN CONST CHAR8 *Out,
-  IN INT32        PanelW,
-  IN INT32        PanelH,
-  IN INT32        Degrees,
   IN UINTN        Screen,
   IN BOOLEAN      Scanout
 )
 {
-  SETTINGS Settings;
-  UINT64   Now = 10000;
-  CHAR8    Path[512];
+  UINT64 Now = 10000;
+  CHAR8  Path[512];
 
-  SettingsDefault (&Settings);
-  Settings.Rotation = (UINT16)Degrees;
-  AsciiStrCopy (Settings.Model, sizeof (Settings.Model), "Retroid Pocket 5");
-  Settings.ModelRotation = 270;
-  MakeApp (&mApp, &Settings);
-  AppStart (&mApp, Now, TRUE);
+  MakeApp (&mApp);
+  AppTick (&mApp, Now);
   mScreens[Screen].Setup (&mApp, Now);
-  AppSetPhysicalSize (&mApp, (UINT32)PanelW, (UINT32)PanelH);
 
-  mPw              = PanelW;
-  UINTN PixelCount = (UINTN)PanelW * PanelH;
+  mPw              = PANEL_W;
+  UINTN PixelCount = (UINTN)PANEL_W * PANEL_H;
   mLogical         = calloc (PixelCount, 4);
   mPhysical        = calloc (PixelCount, 4);
-  PANEL Panel      = {.W       = (UINT32)PanelW,
-                      .H       = (UINT32)PanelH,
+  PANEL Panel      = {.W       = PANEL_W,
+                      .H       = PANEL_H,
                       .Present = BlitToPanel,
                       .Now     = Tick,
                       .Logical = mLogical};
@@ -675,7 +564,7 @@ Render (
     fprintf (stderr, "the view didn't start\n");
     exit (1);
   }
-  ViewRotate (AppDesiredRotation (&mApp));
+  ViewRotate (ROTATION);
   UINT32 LogicalW;
   UINT32 LogicalH;
   ViewLogicalSize (&LogicalW, &LogicalH);
@@ -688,17 +577,13 @@ Render (
   }
   ViewSettle ();
 
-  snprintf (
-    Path, sizeof (Path), "%s/%dx%d-r%d-%s-view.png", Out, PanelW, PanelH,
-    Degrees, mScreens[Screen].Name
-  );
+  snprintf (Path, sizeof (Path), "%s/%s.png", Out, mScreens[Screen].Name);
   WritePng (Path, (INT32)LogicalW, (INT32)LogicalH, mLogical);
   if (Scanout) {
     snprintf (
-      Path, sizeof (Path), "%s/%dx%d-r%d-%s-scanout.png", Out, PanelW, PanelH,
-      Degrees, mScreens[Screen].Name
+      Path, sizeof (Path), "%s/%s-scanout.png", Out, mScreens[Screen].Name
     );
-    WritePng (Path, PanelW, PanelH, mPhysical);
+    WritePng (Path, PANEL_W, PANEL_H, mPhysical);
   }
   ViewDone ();
   free (mLogical);
@@ -706,51 +591,38 @@ Render (
 }
 
 // --check runs sessions of key presses and platform replies the way the
-// main loop does: rotation followed, view synced when the app changes,
-// timers every 10 ms. After every step the panel is compared with a full
-// redraw. A difference means the screen shows something the app's state
-// doesn't explain, such as a leftover where an object was.
+// main loop does: the view synced when the app changes, timers every 10 ms.
+// After every step the panel is compared with a full redraw. A difference
+// means the screen shows something the app's state doesn't explain, such as
+// a leftover where an object was.
 
-// SCAN opens the model list (the scanning screen) and delivers the models a
-// moment later. BOOT_ERROR is a boot that found nothing. FRESH compares the
-// screen with a view built fresh for the same state.
+// NOTIFY shows a toast, BOOT_ERROR a boot that found nothing. FRESH
+// compares the screen with a view built fresh for the same state.
 typedef enum {
   STEP_KEY,
   STEP_FAST,
-  STEP_MODELS,
-  STEP_LINES,
   STEP_NOTIFY,
   STEP_WAIT,
-  STEP_SCAN,
   STEP_BOOT_ERROR,
   STEP_FRESH,
-  STEP_ROTATE
 } STEP_KIND;
 
 typedef struct _STEP {
   STEP_KIND Kind;
   INPUT     Key;
-  INT32     Value; // repeats, WAIT ms or ROTATE degrees
+  INT32     Value; // repeats, or WAIT ms
 } STEP;
 
 #define PRESS(Key, Count) {STEP_KEY, INPUT_##Key, Count}
 // Presses 40 ms apart, like a held key, so each lands mid-animation.
 #define PRESS_FAST(Key, Count) {STEP_FAST, INPUT_##Key, Count}
-#define ROTATE(Degrees)        {STEP_ROTATE, 0, Degrees}
+#define FRESH                  {STEP_FRESH, 0, 0}
 
-STATIC CONST STEP mSessionMenu[]   = {PRESS (DOWN, 24),
-                                      PRESS (UP, 24),
-                                      PRESS (DOWN, 6),
-                                      {STEP_WAIT, 0, 400},
-                                      PRESS (UP, 6)};
-STATIC CONST STEP mSessionModels[] = {
-  {STEP_MODELS, 0, 1}, PRESS (DOWN, 4),     PRESS (UP, 4),   PRESS (DOWN, 2),
-  PRESS (SELECT, 1),   {STEP_WAIT, 0, 600}, PRESS (DOWN, 3), PRESS (UP, 3)};
-STATIC CONST STEP mSessionLines[]   = {{STEP_LINES, 0, 1},
-                                       PRESS (DOWN, 30),
-                                       PRESS (UP, 30),
-                                       PRESS (BACK, 1),
-                                       PRESS (DOWN, 2)};
+STATIC CONST STEP mSessionMenu[] = {PRESS (DOWN, 24),
+                                    PRESS (UP, 24),
+                                    PRESS (DOWN, 6),
+                                    {STEP_WAIT, 0, 400},
+                                    PRESS (UP, 6)};
 // Install PortareOS's choices and back, then Emergency download mode and
 // back.
 STATIC CONST STEP mSessionConfirm[] = {
@@ -759,43 +631,18 @@ STATIC CONST STEP mSessionConfirm[] = {
 STATIC CONST STEP mSessionToast[] = {{STEP_NOTIFY, 0, 1}, {STEP_WAIT, 0, 3500},
                                      PRESS (DOWN, 3),     {STEP_NOTIFY, 0, 1},
                                      PRESS (UP, 3),       {STEP_WAIT, 0, 3500}};
-// Turns the screen through every rotation between presses.
-STATIC CONST STEP mSessionRotate[] = {
-  ROTATE (90),         {STEP_WAIT, 0, 300}, PRESS (DOWN, 3),
-  ROTATE (180),        {STEP_WAIT, 0, 300}, PRESS (UP, 2),
-  ROTATE (270),        {STEP_WAIT, 0, 300}, ROTATE (0),
-  {STEP_WAIT, 0, 300}, PRESS (DOWN, 3),     PRESS (UP, 6)};
-
 STATIC CONST STEP mSessionHeld[] = {PRESS_FAST (DOWN, 20), {STEP_WAIT, 0, 400},
                                     PRESS_FAST (UP, 20),   {STEP_WAIT, 0, 400},
                                     PRESS_FAST (DOWN, 7),  PRESS_FAST (UP, 3),
                                     PRESS_FAST (DOWN, 9),  {STEP_WAIT, 0, 600}};
-STATIC CONST STEP mSessionHeldModels[] = {
-  {STEP_MODELS, 0, 1},  PRESS_FAST (DOWN, 5), PRESS_FAST (UP, 5),
-  PRESS_FAST (DOWN, 3), PRESS (SELECT, 1),    PRESS_FAST (DOWN, 12),
-  PRESS_FAST (UP, 12),  {STEP_WAIT, 0, 600}};
-STATIC CONST STEP mSessionHeldLines[] = {
-  {STEP_LINES, 0, 1},    PRESS_FAST (DOWN, 25), PRESS_FAST (UP, 25),
-  PRESS_FAST (DOWN, 12), PRESS (BACK, 1),       PRESS_FAST (DOWN, 10),
-  {STEP_WAIT, 0, 600}};
 
-#define FRESH {STEP_FRESH, 0, 0}
+// The boot list, an error and a toast, each against a fresh view.
 STATIC CONST STEP mSessionPaths[] = {FRESH,
-                                     {STEP_SCAN, 0, 1},
+                                     PRESS (SELECT, 1),
                                      FRESH,
                                      PRESS (DOWN, 2),
                                      FRESH,
-                                     PRESS (SELECT, 1),
-                                     {STEP_WAIT, 0, 600},
-                                     FRESH,
-                                     {STEP_LINES, 0, 1},
-                                     FRESH,
-                                     PRESS_FAST (DOWN, 9),
-                                     FRESH,
-                                     PRESS (BACK, 1),
-                                     FRESH,
-                                     PRESS (UP, 2),
-                                     PRESS (SELECT, 1),
+                                     PRESS_FAST (DOWN, 5),
                                      FRESH,
                                      PRESS (BACK, 1),
                                      FRESH,
@@ -806,11 +653,7 @@ STATIC CONST STEP mSessionPaths[] = {FRESH,
                                      {STEP_NOTIFY, 0, 1},
                                      {STEP_WAIT, 0, 300},
                                      FRESH,
-                                     {STEP_SCAN, 0, 1},
-                                     PRESS (BACK, 1),
-                                     FRESH,
-                                     PRESS (SELECT, 1),
-                                     {STEP_WAIT, 0, 300},
+                                     PRESS (DOWN, 1),
                                      FRESH};
 
 // Install PortareOS's screens, each against a fresh view.
@@ -820,44 +663,8 @@ STATIC CONST STEP mSessionInstall[] = {
   FRESH,           PRESS (DOWN, 3),   FRESH,             PRESS (UP, 2),
   PRESS (SELECT, 1), FRESH,           PRESS (DOWN, 1),   FRESH,
   PRESS (BACK, 1), FRESH,             PRESS (DOWN, 1),   PRESS (SELECT, 1),
-  FRESH,           ROTATE (90),       FRESH,             PRESS (BACK, 1),
-  FRESH,           PRESS (BACK, 1),   FRESH};
-
-// Rotation changes under every kind of screen.
-STATIC CONST STEP mSessionPaths2[] = {FRESH,
-                                      PRESS (DOWN, 3),
-                                      PRESS (SELECT, 1),
-                                      FRESH,
-                                      ROTATE (90),
-                                      FRESH,
-                                      PRESS (BACK, 1),
-                                      FRESH,
-                                      {STEP_SCAN, 0, 1},
-                                      FRESH,
-                                      ROTATE (180),
-                                      FRESH,
-                                      PRESS (DOWN, 2),
-                                      FRESH,
-                                      {STEP_NOTIFY, 0, 1},
-                                      ROTATE (270),
-                                      FRESH,
-                                      {STEP_LINES, 0, 1},
-                                      FRESH,
-                                      PRESS_FAST (DOWN, 6),
-                                      ROTATE (0),
-                                      FRESH,
-                                      PRESS (BACK, 1),
-                                      FRESH,
-                                      ROTATE (90),
-                                      FRESH,
-                                      {STEP_BOOT_ERROR, 0, 1},
-                                      ROTATE (180),
-                                      FRESH,
-                                      PRESS (SELECT, 1),
-                                      ROTATE (270),
-                                      FRESH,
-                                      PRESS_FAST (DOWN, 12),
-                                      FRESH};
+  FRESH,           PRESS (BACK, 1),   FRESH,             PRESS (BACK, 1),
+  FRESH};
 
 STATIC CONST struct {
   CONST CHAR8 *Name;
@@ -866,17 +673,11 @@ STATIC CONST struct {
 } mSessions[] = {
 #define SESSION(Name, Steps) {Name, Steps, sizeof (Steps) / sizeof (Steps[0])}
   SESSION ("menu", mSessionMenu),
-  SESSION ("models", mSessionModels),
-  SESSION ("lines", mSessionLines),
   SESSION ("confirm", mSessionConfirm),
   SESSION ("install", mSessionInstall),
   SESSION ("toast", mSessionToast),
-  SESSION ("rotate", mSessionRotate),
   SESSION ("held", mSessionHeld),
-  SESSION ("held_models", mSessionHeldModels),
-  SESSION ("held_lines", mSessionHeldLines),
   SESSION ("paths", mSessionPaths),
-  SESSION ("paths2", mSessionPaths2),
 #undef SESSION
 };
 
@@ -974,8 +775,7 @@ FreshCheck (
   IN CONST CHAR8 *What,
   IN INT32        Frame,
   IN INT32        W,
-  IN INT32        H,
-  IN UINT16       Rotation
+  IN INT32        H
 )
 {
   UINTN PixelCount = (UINTN)W * H;
@@ -993,7 +793,7 @@ FreshCheck (
     fprintf (stderr, "the view didn't start again\n");
     exit (1);
   }
-  ViewRotate (Rotation);
+  ViewRotate (ROTATION);
   ViewSync (&mApp);
   ViewSettle ();
   ViewRedraw (TRUE);
@@ -1004,47 +804,22 @@ FreshCheck (
 STATIC VOID
 Check (
   IN CONST CHAR8 *Out,
-  IN INT32        PanelW,
-  IN INT32        PanelH,
-  IN INT32        Degrees,
   IN UINTN        Session
 )
 {
-  STATIC CONST TEXT_LINE Rows[] = {
-    {"SoC", "Snapdragon 8 Gen 2"},
-    {"Chip", "SM8550 v2.0 \xc2\xb7 id 603"},
-    {"RAM", "12 GB (11.2 GiB)"},
-    {"Storage", "256 GB"},
-    {"SD card", "Not inserted"},
-    {"Display", "1080 \xc3\x97 1920"},
-    {"Panel", "Retroid Pocket 5 (Visionox)"},
-    {"DSI", "qcom,mdss_dsi_visionox_1080p_cmd"},
-    {"Android", "14 (UKQ1.230804.001)"},
-    {"Model", "Retroid Pocket 5"},
-    {"Bootloader", "OpenABL " MENU_VERSION},
-    {"UEFI firmware", "Qualcomm 4.0"},
-    {"PMIC", "0x0 1.0, 0x1 2.0, 0x2 1.1"},
-    {"Storage chip", "UFS \xc2\xb7 SAMSUNG KLUDG4UHGC-B0E1"},
-  };
-  SETTINGS Settings;
-  UINT16   Rotation;
-  UINT64   Now   = 10000;
-  INT32    Frame = 0;
-  CHAR8    What[96];
+  UINT64 Now   = 10000;
+  INT32  Frame = 0;
 
-  SettingsDefault (&Settings);
-  Settings.Rotation = (UINT16)Degrees;
-  MakeApp (&mApp, &Settings);
-  AppStart (&mApp, Now, TRUE);
-  AppSetPhysicalSize (&mApp, (UINT32)PanelW, (UINT32)PanelH);
-  mPw              = PanelW;
-  UINTN PixelCount = (UINTN)PanelW * PanelH;
+  MakeApp (&mApp);
+  AppTick (&mApp, Now);
+  mPw              = PANEL_W;
+  UINTN PixelCount = (UINTN)PANEL_W * PANEL_H;
   mLogical         = calloc (PixelCount, 4);
   mPhysical        = calloc (PixelCount, 4);
   mSnap            = calloc (PixelCount, 4);
   mClockMs         = (UINT32)Now;
-  mCheckPanel      = (PANEL){.W       = (UINT32)PanelW,
-                             .H       = (UINT32)PanelH,
+  mCheckPanel      = (PANEL){.W       = PANEL_W,
+                             .H       = PANEL_H,
                              .Present = BlitToPanel,
                              .Now     = Tick,
                              .Logical = mLogical};
@@ -1052,69 +827,31 @@ Check (
     fprintf (stderr, "the view didn't start\n");
     exit (1);
   }
-  Rotation = AppDesiredRotation (&mApp);
-  ViewRotate (Rotation);
+  ViewRotate (ROTATION);
   mApp.Dirty = TRUE;
-  snprintf (
-    What, sizeof (What), "%dx%d-r%d-%s", PanelW, PanelH, Degrees,
-    mSessions[Session].Name
-  );
   for (UINTN Index = 0; Index < mSessions[Session].Count; Index++) {
     CONST STEP *Step = &mSessions[Session].Steps[Index];
     INT32       Repeats =
       Step->Kind == STEP_KEY || Step->Kind == STEP_FAST ? Step->Value : 1;
-    INT32 Ms = Step->Kind == STEP_WAIT    ? Step->Value
-               : Step->Kind == STEP_FAST  ? 40
-               : Step->Kind == STEP_FRESH ? 0
-                                          : 300;
-    if (Step->Kind == STEP_ROTATE) {
-      Repeats = 1;
-    }
+    INT32 Ms = Step->Kind == STEP_WAIT   ? Step->Value
+               : Step->Kind == STEP_FAST ? 40
+                                         : 300;
     if (Step->Kind == STEP_FRESH) {
-      FreshCheck (Out, What, Frame, PanelW, PanelH, Rotation);
+      FreshCheck (Out, mSessions[Session].Name, Frame, PANEL_W, PANEL_H);
       continue;
     }
     for (INT32 Repeat = 0; Repeat < Repeats; Repeat++) {
-      CONST MODEL *Models;
-      UINTN        ModelCount;
       switch (Step->Kind) {
       case STEP_KEY:
       case STEP_FAST:
         AppInput (&mApp, Step->Key);
         break;
-      case STEP_MODELS:
-        ModelCount = SampleModels (&Models);
-        AppOnModels (&mApp, Models, ModelCount);
-        break;
-      case STEP_LINES:
-        AppOnDeviceInfo (&mApp, Rows, sizeof (Rows) / sizeof (Rows[0]));
-        break;
       case STEP_NOTIFY:
-        AppNotify (&mApp, "Settings saved");
-        break;
-      case STEP_SCAN:
-        AppOpenModels (&mApp);
-        for (INT32 Elapsed = 0; Elapsed < 300; Elapsed += 10) {
-          mClockMs += 10;
-          AppTick (&mApp, mClockMs);
-          if (mApp.Dirty) {
-            ViewSync (&mApp);
-          }
-          ViewRun ();
-          CheckFrame (Out, What, Frame++, PanelW, PanelH);
-        }
-        ModelCount = SampleModels (&Models);
-        AppOnModels (&mApp, Models, ModelCount);
+        AppOnFailed (&mApp, gStrings->AblSettingFailed);
         break;
       case STEP_BOOT_ERROR:
-        AppOnBootResult (&mApp, FALSE, BOOT_ERROR_NO_IMAGE, NULL);
+        AppOnBootResult (&mApp, BOOT_ERROR_NO_IMAGE, NULL);
         break;
-      case STEP_ROTATE: {
-        SETTINGS Changed = mApp.Settings;
-        Changed.Rotation = (UINT16)Step->Value;
-        AppSetSettings (&mApp, &Changed);
-        break;
-      }
       case STEP_WAIT:
       case STEP_FRESH:
         break;
@@ -1123,16 +860,11 @@ Check (
       for (INT32 Elapsed = 0; Elapsed < Ms; Elapsed += 10) {
         mClockMs += 10;
         AppTick (&mApp, mClockMs);
-        if (AppDesiredRotation (&mApp) != Rotation) {
-          Rotation = AppDesiredRotation (&mApp);
-          ViewRotate (Rotation);
-          mApp.Dirty = TRUE;
-        }
         if (mApp.Dirty) {
           ViewSync (&mApp);
         }
         ViewRun ();
-        CheckFrame (Out, What, Frame++, PanelW, PanelH);
+        CheckFrame (Out, mSessions[Session].Name, Frame++, PANEL_W, PANEL_H);
       }
     }
   }
@@ -1169,24 +901,19 @@ main (
     }
   }
   if (DoCheck) {
-    STATIC CONST INT32 Pairs[][3] = {
-      {1280, 800, 0}, {1080, 1920, 270}, {960, 1280, 90}, {1080, 1920, 0}};
-    for (UINTN Pair = 0; Pair < sizeof (Pairs) / sizeof (Pairs[0]); Pair++) {
-      for (UINTN Session = 0;
-           Session < sizeof (mSessions) / sizeof (mSessions[0]); Session++) {
-        CHAR8 Key[128];
-        snprintf (
-          Key, sizeof (Key), "%dx%d-r%d-%s", Pairs[Pair][0], Pairs[Pair][1],
-          Pairs[Pair][2], mSessions[Session].Name
-        );
-        if (!strstr (Key, Filter)) {
-          continue;
-        }
-        INT32 Before = mBadFrames;
-        Check (Out, Pairs[Pair][0], Pairs[Pair][1], Pairs[Pair][2], Session);
-        printf ("%s: %s\n", Key, mBadFrames == Before ? "clean" : "MISMATCH");
-        Count++;
+    for (UINTN Session = 0;
+         Session < sizeof (mSessions) / sizeof (mSessions[0]); Session++) {
+      INT32 Before = mBadFrames;
+
+      if (!strstr (mSessions[Session].Name, Filter)) {
+        continue;
       }
+      Check (Out, Session);
+      printf (
+        "%s: %s\n", mSessions[Session].Name,
+        mBadFrames == Before ? "clean" : "MISMATCH"
+      );
+      Count++;
     }
     printf (
       "checked %d sessions: %d frame(s) differ from a full redraw\n", Count,
@@ -1194,36 +921,13 @@ main (
     );
     return mBadFrames ? 1 : 0;
   }
-  for (UINTN Panel = 0; Panel < sizeof (mPanels) / sizeof (mPanels[0]);
-       Panel++) {
-    for (UINTN Turn = 0; Turn < 4; Turn++) {
-      BOOLEAN Full = FALSE;
-      for (UINTN Index = 0; Index < sizeof (mFullSet) / sizeof (mFullSet[0]);
-           Index++) {
-        Full |= mFullSet[Index][0] == mPanels[Panel][0] &&
-                mFullSet[Index][1] == mPanels[Panel][1] &&
-                mFullSet[Index][2] == mRotations[Turn];
-      }
-      for (UINTN Screen = 0; Screen < sizeof (mScreens) / sizeof (mScreens[0]);
-           Screen++) {
-        CHAR8 Key[128];
-        if (Screen != 0 && !Full) {
-          continue;
-        }
-        snprintf (
-          Key, sizeof (Key), "%dx%d-r%d-%s", mPanels[Panel][0],
-          mPanels[Panel][1], mRotations[Turn], mScreens[Screen].Name
-        );
-        if (!strstr (Key, Filter)) {
-          continue;
-        }
-        Render (
-          Out, mPanels[Panel][0], mPanels[Panel][1], mRotations[Turn], Screen,
-          Screen == 0
-        );
-        Count++;
-      }
+  for (UINTN Screen = 0; Screen < sizeof (mScreens) / sizeof (mScreens[0]);
+       Screen++) {
+    if (!strstr (mScreens[Screen].Name, Filter)) {
+      continue;
     }
+    Render (Out, Screen, Screen == 0);
+    Count++;
   }
   printf ("rendered %d screens to %s\n", Count, Out);
   return 0;

@@ -16,8 +16,18 @@
 
 #include "Base/OablBase.h"
 
-#include "Gfx/Gfx.h"
 #include "Ui/Ui.h"
+
+// Copies W x H pixels (Stride pixels per row) to (X, Y) on the panel.
+// Pixels are 0x00RRGGBB, which is GOP's BGRX in memory.
+typedef VOID (*PRESENT_BLIT) (
+  IN CONST UINT32 *Pixels,
+  IN UINT32        Stride,
+  IN UINT32        X,
+  IN UINT32        Y,
+  IN UINT32        W,
+  IN UINT32        H
+);
 
 typedef struct _PANEL {
   UINT32       W, H;    // physical pixels

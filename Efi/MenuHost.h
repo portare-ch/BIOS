@@ -24,19 +24,12 @@
 
 #include "Core/BootDecision.h"
 
-// Why the last Start Linux came back. Kept across a restart, so the values
-// stay.
+// Why the last start of PortareOS came back, or why the menu opens.
 #define MENU_START_RESULT_NONE 0u
 // Nothing to boot.
 #define MENU_START_RESULT_NOTHING 1u
-// An image ran and returned, with no boot image after it.
-#define MENU_START_RESULT_RETURNED 2u
-// The boot image needs a device model.
-#define MENU_START_RESULT_NO_MODEL 3u
 // The boot image didn't verify or didn't start.
 #define MENU_START_RESULT_FAILED 4u
-// USB host didn't come up (no drive, or XBL kept the core).
-#define MENU_START_RESULT_NO_USB 5u
 // What the boot list picked is on a drive that's gone (the SD card taken
 // out), so nothing was started.
 #define MENU_START_RESULT_PICK_GONE 6u
@@ -47,12 +40,6 @@
 #define MENU_START_RESULT_CHARGING 8u
 // Android's start came back.
 #define MENU_START_RESULT_ANDROID_FAILED 0x80u
-
-// devinfo boot source codes (the ABL's BOOT_SOURCE_*).
-#define MENU_HOST_BOOT_SOURCE_INTERNAL 0u
-#define MENU_HOST_BOOT_SOURCE_AUTO     1u
-#define MENU_HOST_BOOT_SOURCE_USB      2u
-#define MENU_HOST_BOOT_SOURCE_SDCARD   3u
 
 // Returns an OPENABL_MENU_ACTION_* name for the log, or "?".
 CONST CHAR8 *
@@ -65,15 +52,8 @@ typedef struct _MENU_HOST_STATE {
   UINT8  Entry;           // OPENABL_MENU_ENTRY_*
   UINT16 Key;             // the key held at the start, a SCAN_* code
   CHAR8  Version[32];     // the ABL's version
-  // 1 boots Android.
+  // 1 boots Android: the Boot order says so, or Volume Up was held.
   UINT8 BootMode;
-  // 1 verbose.
-  UINT8 AblMode;
-  UINT8 AltVolumeUp;
-  // MENU_HOST_BOOT_SOURCE_*
-  UINT8 BootSource;
-  // Alternative Volume Up held: any external drive boots.
-  BOOLEAN AltVolumeBoot;
 } MENU_HOST_STATE;
 
 
@@ -113,17 +93,12 @@ MenuHostAction (
 EFI_STATUS
 MenuHostPoll (IN CONST MENU_HOST *Host);
 
-// Sends a line to the ABL's debug log, then to AblConsoleProgramLine.
+// Sends a line to the ABL's debug log.
 VOID
 MenuHostLog (
   IN CONST MENU_HOST *Host,
   IN CONST CHAR8     *Line
 );
-
-// A OPENABL_STORAGE_LOG that logs through the host, for Efi/Quirks. Locates
-// the host on each call; invalid UTF-8 is replaced.
-VOID EFIAPI
-MenuHostLogFn (IN CONST CHAR8 *Line OPTIONAL);
 
 // Updates the devicetree and starts the kernel with Qualcomm's code. Returns
 // only if the kernel didn't start.

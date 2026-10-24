@@ -39,7 +39,7 @@
 #include "Efi/Efi.h"
 
 #include "Core/Gpt.h"
-#include "Efi/Serial.h"
+#include "Efi/Log.h"
 
 typedef enum {
   INSTALL_DUALBOOT,

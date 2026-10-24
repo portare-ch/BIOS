@@ -27,11 +27,6 @@ typedef struct _DISPLAY {
 EFI_STATUS
 DisplayOpen (OUT DISPLAY *Out);
 
-// Opens the graphics output whose framebuffer is in XBL's display region,
-// or else the first one that opens. Returns EFI_NOT_FOUND if none opens.
-EFI_STATUS
-DisplayOpenPanel (OUT DISPLAY *Out);
-
 STATIC inline VOID
 DisplaySize (
   IN CONST DISPLAY *Display,

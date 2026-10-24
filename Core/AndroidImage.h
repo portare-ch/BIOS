@@ -56,10 +56,6 @@ AndroidBootImageParse (
 VOID
 AndroidBootImageFree (IN OUT ANDROID_BOOT_IMAGE *Image);
 
-// Returns the offset of the end of the last section.
-UINT64
-AndroidBootImageTotalSize (IN CONST ANDROID_BOOT_IMAGE *Image);
-
 // Decodes an os_version: 7 bits each of A.B.C, then 7 bits of year - 2000
 // and 4 bits of month. Fails if the value is 0 (not set).
 BOOLEAN
@@ -87,20 +83,6 @@ typedef struct _ANDROID_BOOT_COMMAND {
   CHAR8 Other[ANDROID_BCB_COMMAND_LEN + 1];
 } ANDROID_BOOT_COMMAND;
 
-ANDROID_BOOT_COMMAND
-AndroidParseBcb (
-  IN CONST UINT8 *Misc,
-  IN UINTN        Size
-);
-
-// Fills a misc command field with Command, zero-padded to 32 bytes. Command
-// is cut to 31 bytes so the field always ends in a NUL.
-VOID
-AndroidBcbCommand (
-  IN CONST CHAR8 *Command,
-  OUT UINT8       Out[ANDROID_BCB_COMMAND_LEN]
-);
-
 typedef struct _ANDROID_DTB {
   UINTN Offset, Size;
 } ANDROID_DTB;
@@ -119,27 +101,5 @@ AndroidFindDtbs (
 // How much of the end of a kernel to search first for appended devicetrees.
 // Same as LinuxLoader's MODEL_DTB_TAIL_WINDOW.
 #define ANDROID_DTB_TAIL_WINDOW ((UINT64)4 << 20)
-
-// Returns where to look for devicetrees in a boot image: the DTB section
-// (header v2+) if there is one, otherwise the end of the kernel, where
-// Image.gz-dtb builds append them. Fails if there is neither.
-BOOLEAN
-AndroidDtbWindow (
-  IN CONST ANDROID_BOOT_IMAGE *Image,
-  OUT UINT64                  *Offset,
-  OUT UINT64                  *Length
-);
-
-// Returns TRUE if a tail window from AndroidDtbWindow, read into Region,
-// starts with a devicetree. The appended devicetrees may then start earlier,
-// so the whole kernel must be searched.
-BOOLEAN
-AndroidWindowTooShort (
-  IN CONST ANDROID_BOOT_IMAGE *Image,
-  IN UINT64                    Offset,
-  IN UINT64                    Length,
-  IN CONST UINT8              *Region,
-  IN UINTN                     Size
-);
 
 #endif

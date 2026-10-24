@@ -128,62 +128,6 @@ BufferAppendU8 (
 }
 
 BOOLEAN
-BufferAppendLe16 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT16           Value
-)
-{
-  UINT8 Bytes[2];
-  WriteLe16 (Bytes, Value);
-  return BufferAppend (Buffer, Bytes, sizeof (Bytes));
-}
-
-BOOLEAN
-BufferAppendLe32 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT32           Value
-)
-{
-  UINT8 Bytes[4];
-  WriteLe32 (Bytes, Value);
-  return BufferAppend (Buffer, Bytes, sizeof (Bytes));
-}
-
-BOOLEAN
-BufferAppendLe64 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT64           Value
-)
-{
-  UINT8 Bytes[8];
-  WriteLe64 (Bytes, Value);
-  return BufferAppend (Buffer, Bytes, sizeof (Bytes));
-}
-
-BOOLEAN
-BufferAppendBe32 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT32           Value
-)
-{
-  UINT8 Bytes[4];
-  WriteBe32 (Bytes, Value);
-  return BufferAppend (Buffer, Bytes, sizeof (Bytes));
-}
-
-BOOLEAN
-BufferAppendBe64 (
-  IN OUT OABL_BUFFER *Buffer,
-  IN UINT64           Value
-)
-{
-  UINT8 Bytes[8];
-  WriteBe32 (Bytes, (UINT32)(Value >> 32));
-  WriteBe32 (Bytes + 4, (UINT32)Value);
-  return BufferAppend (Buffer, Bytes, sizeof (Bytes));
-}
-
-BOOLEAN
 BufferAppendZeros (
   IN OUT OABL_BUFFER *Buffer,
   IN UINTN            Length
@@ -218,35 +162,6 @@ BufferFree (IN OUT OABL_BUFFER *Buffer)
 {
   FreePool (Buffer->Data);
   *Buffer = (OABL_BUFFER){0};
-}
-
-UINT8 *
-BufferTake (
-  IN OUT OABL_BUFFER *Buffer,
-  OUT UINTN          *Length OPTIONAL
-)
-{
-  UINT8 *Data = Buffer->Data;
-  if (Length) {
-    *Length = Buffer->Len;
-  }
-  *Buffer = (OABL_BUFFER){0};
-  return Data;
-}
-
-BOOLEAN
-GetLe16 (
-  IN CONST UINT8 *Bytes,
-  IN UINTN        Size,
-  IN UINTN        At,
-  OUT UINT16     *Value
-)
-{
-  if (!InBounds (Size, At, 2)) {
-    return FALSE;
-  }
-  *Value = ReadLe16 (Bytes + At);
-  return TRUE;
 }
 
 BOOLEAN
@@ -291,21 +206,6 @@ GetBe32 (
     return FALSE;
   }
   *Value = ReadBe32 (Bytes + At);
-  return TRUE;
-}
-
-BOOLEAN
-GetBe64 (
-  IN CONST UINT8 *Bytes,
-  IN UINTN        Size,
-  IN UINTN        At,
-  OUT UINT64     *Value
-)
-{
-  if (!InBounds (Size, At, 8)) {
-    return FALSE;
-  }
-  *Value = ReadBe64 (Bytes + At);
   return TRUE;
 }
 

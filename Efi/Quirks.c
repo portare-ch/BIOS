@@ -4,9 +4,8 @@
  */
 
 /**
-  Quirks - live patches for bugs in XBL's drivers, the storage protocol the
-  early copy of the menu leaves installed for the ABL, and an override that
-  makes XBL's security checks accept every image.
+  Quirks - live patches for bugs in XBL's SD card driver, and the storage
+  protocol the early copy of the menu leaves installed for the ABL.
 */
 
 #include "Efi/Quirks.h"
@@ -15,42 +14,17 @@
 
 #include <Guid/EventGroup.h>
 #include <Protocol/Cpu.h>
-#include <Protocol/Security.h>
-#include <Protocol/Security2.h>
 
 #include "Base/Buffer.h"
 #include "Base/Memory.h"
 #include "Base/Print.h"
 #include "Base/Text.h"
-#include "Core/Settings.h"
 #include "Efi/Abl.h"
 #include "Efi/BootImage.h"
 #include "Efi/Dxe.h"
 #include "Efi/MenuHost.h"
-#include "Efi/NestedDisk.h"
-#include "Efi/Qcom.h"
 #include "Efi/Splash.h"
-#include "Efi/Disk.h"
-#include "Efi/UsbHost.h"
 #include "Efi/Variables.h"
-
-#ifdef OABL_SYSFONT
-#include "Efi/SysFont.h"
-#endif
-
-// ChipInfo ids (GetChipId). The SM8250's XBL needs the GPT and FAT quirks.
-#define SM8250 356u
-#ifdef OABL_SDCC_SM4450
-#define SM4450 654u
-#endif
-#ifdef OABL_SDCC_SM6450
-// Snapdragon G2 Gen 1 (TG4070).
-#define SM6450 634u
-#endif
-#ifdef OABL_SDCC_SM7675
-// Snapdragon G2 Gen 2 (RP G2).
-#define SM7675_G2 700u
-#endif
 
 // Event group on which XBL's SdccDxe re-detects the SD card.
 STATIC EFI_GUID mDetectSdCard = {
@@ -105,26 +79,6 @@ Matches (
 }
 
 // Unaligned reads from a mapped image.
-#if defined(OABL_SDCC_SM4450) || defined(OABL_SDCC_SM6450) ||                  \
-  defined(OABL_SDCC_SM7675) || defined(OABL_SD_DIAGNOSTICS)
-STATIC UINT32
-ReadU32 (IN UINT64 Address)
-{
-  UINT32 Value;
-
-  CopyMem (&Value, (CONST VOID *)(UINTN)Address, sizeof (Value));
-  return Value;
-}
-#endif
-
-STATIC UINT64
-ReadU64 (IN UINT64 Address)
-{
-  UINT64 Value;
-
-  CopyMem (&Value, (CONST VOID *)(UINTN)Address, sizeof (Value));
-  return Value;
-}
 
 // Patching driver code
 
@@ -293,7 +247,7 @@ QuirksSignalSdDetect (VOID)
 // SdccDxe: the 1.8 V request
 
 // The movk that sets S18R in the ACMD41 argument and what follows it, in
-// the SM8250 and SM4450 builds. Stored XORed (HIDE).
+// the SdccDxe builds. Stored XORed (HIDE).
 STATIC CONST UINT8 mAcmd41[2][24] = {
   {HIDE (0x15), HIDE (0x00), HIDE (0x90), HIDE (0x52), HIDE (0xf5),
    HIDE (0x3f), HIDE (0xa8), HIDE (0x72), HIDE (0x00), HIDE (0x00),
@@ -313,23 +267,7 @@ STATIC CONST UINT8 mAcmd41Mask[2][24] = {
 #define MOVK_AT         4
 #define MOVK_S18R_SET   0x72a83ff5u
 #define MOVK_S18R_CLEAR 0x72a81ff5u
-// Also sets XPC (OCR bit 28, SDXC power control).
-#define MOVK_XPC_S18R_CLEAR 0x72aa1ff5u
-// SM8650 and SM8750 chip ids, whose cards get XPC.
-STATIC CONST UINT32 mXpcChips[] = {682, 639, 706};
 #define MAX_SITES 16
-
-STATIC BOOLEAN
-WantsXpc (IN UINT32 Chip)
-{
-  for (UINTN Index = 0; Index < sizeof (mXpcChips) / sizeof (*mXpcChips);
-       Index++) {
-    if (mXpcChips[Index] == Chip) {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
 
 typedef struct _U64_LIST
 OABL_VEC (UINT64) U64_LIST;
@@ -538,576 +476,13 @@ SpeedSelects (VOID)
   return Sites;
 }
 
-#if defined(OABL_SDCC_SM4450) || defined(OABL_SDCC_SM6450) ||                  \
-  defined(OABL_SDCC_SM7675)
-typedef struct _SDCC_WORD {
-  UINT64 Rva;
-  UINT32 Orig, Repl;
-} SDCC_WORD;
-// An SdccDxe build that needs more than the S18R patch.
-typedef struct _SDCC_BUILD {
-  CONST CHAR8  *Name;
-  CONST UINT32 *Chips;
-  UINTN         NChips;
-  UINT64        ImageSize;
-  // Slot table to check before patching.
-  BOOLEAN          HasSlots;
-  UINT64           SlotsRva;
-  CONST UINT32    *Slots;
-  UINTN            NSlots;
-  CONST SDCC_WORD *Words;
-  UINTN            NWords;
-} SDCC_BUILD;
-
-#ifdef OABL_SDCC_SM4450
-STATIC CONST UINT32    mSm4450Chips[] = {SM4450};
-STATIC CONST UINT32    mSm4450Slots[] = {0x007c4000, 0x08804000};
-STATIC CONST SDCC_WORD mSm4450Words[] = {{0x527c, 0x360005a8, 0x1400002d},
-                                         {0xb1c4, 0xb9400298, 0x52800058}};
-#endif
-#ifdef OABL_SDCC_SM6450
-STATIC CONST UINT32    mSm6450Chips[] = {SM6450};
-STATIC CONST UINT32    mSm6450Slots[] = {0x007c4000, 0x08804000};
-STATIC CONST SDCC_WORD mSm6450Words[] = {{0x51d8, 0x36000248, 0x14000012},
-                                         {0xb08c, 0xb9400298, 0x52800058}};
-#endif
-#ifdef OABL_SDCC_SM7675
-STATIC CONST UINT32    mSm7675Chips[] = {SM7675_G2};
-STATIC CONST SDCC_WORD mSm7675Words[] = {{0xadec, 0xb9400298, 0x52800058}};
-#endif
-
-// Extra words. VOLT, the SM4450/SM6450's first, turns the tbz on the
-// driver's "SD rails already on" byte into a branch to the power-on votes.
-// MODE replaces the bus speed mode (MaxSpeedMode, 5 = SDR104) with 2, high
-// speed.
-STATIC CONST SDCC_BUILD mSdccBuilds[] = {
-#ifdef OABL_SDCC_SM4450
-  {"sm4450", mSm4450Chips, 1, 0x1e000, TRUE, 0x150f0, mSm4450Slots, 2,
-   mSm4450Words, 2},
-#endif
-#ifdef OABL_SDCC_SM6450
-  {"sm6450", mSm6450Chips, 1, 0x1e000, TRUE, 0x14fb8, mSm6450Slots, 2,
-   mSm6450Words, 2},
-#endif
-#ifdef OABL_SDCC_SM7675
-  {"sm7675", mSm7675Chips, 1, 0x1e000, FALSE, 0, NULL, 0, mSm7675Words, 1},
-#endif
-};
-
-// Finds the loaded SdccDxe image matching Build by its PE header and the
-// words at their offsets. Returns its base, or 0.
-STATIC UINT64
-SdccImage (IN CONST SDCC_BUILD *Build)
-{
-  CODE_REGIONS Regions = CodeRegions ();
-  UINT64       Found   = 0;
-
-  for (UINTN Index = 0; Index < Regions.Count && !Found; Index++) {
-    UINT64 Start  = Regions.Items[Index].Start;
-    UINT64 Len    = Regions.Items[Index].Len;
-    UINT64 Offset = 0;
-
-    while (Offset + Build->ImageSize <= Len) {
-      UINT64       Base = Start + Offset;
-      CONST UINT8 *Mz   = (CONST UINT8 *)(UINTN)Base;
-      UINT64       Pe;
-      BOOLEAN      All = TRUE;
-
-      Offset += PAGE;
-      if (Mz[0] != 'M' || Mz[1] != 'Z') {
-        continue;
-      }
-      Pe = ReadU32 (Base + 0x3c);
-      if (Pe < 0x40 || Pe > Build->ImageSize - 0x60 ||
-          ReadU32 (Base + Pe) != 0x00004550 ||
-          (ReadU32 (Base + Pe + 4) & 0xffff) != 0xaa64 ||
-          ReadU32 (Base + Pe + 0x50) != Build->ImageSize) {
-        continue;
-      }
-      for (UINTN Word = 0; Word < Build->NWords; Word++) {
-        UINT32 Value = ReadU32 (Base + Build->Words[Word].Rva);
-
-        if (Value != Build->Words[Word].Orig &&
-            Value != Build->Words[Word].Repl) {
-          All = FALSE;
-          break;
-        }
-      }
-      if (All) {
-        Found = Base;
-        break;
-      }
-    }
-  }
-  VecFree (&Regions);
-  return Found;
-}
-
-STATIC VOID
-SdccBuild (
-  IN CONST SDCC_BUILD *Build,
-  IN LOG_SINK          Log
-)
-{
-  UINT64 Base = SdccImage (Build);
-  UINT32 Done = 0;
-  UINT32 All;
-
-  if (!Base) {
-    LogPrint (Log, "sdcc %s: SdccDxe image not found", Build->Name);
-    return;
-  }
-  if (Build->HasSlots) {
-    for (UINTN Index = 0; Index < Build->NSlots; Index++) {
-      if (ReadU32 (Base + Build->SlotsRva + 4 * Index) != Build->Slots[Index]) {
-        LogPrint (
-          Log, "sdcc %s: slot layout unexpected, skipping", Build->Name
-        );
-        return;
-      }
-    }
-  }
-  // Bit n: word n is patched. Bit n + 4: the write failed. Bit n + 8: the
-  // word is neither the original nor the replacement.
-  for (UINTN Index = 0; Index < Build->NWords; Index++) {
-    UINT32 Bit   = 1u << Index;
-    UINT32 Value = ReadU32 (Base + Build->Words[Index].Rva);
-
-    if (Value == Build->Words[Index].Repl) {
-      Done |= Bit;
-    } else if (Value != Build->Words[Index].Orig) {
-      Done |= Bit << 8;
-    } else if (WriteWord (
-                 Base + Build->Words[Index].Rva, TRUE, Build->Words[Index].Orig,
-                 Build->Words[Index].Repl
-               )) {
-      Done |= Bit;
-    } else {
-      Done |= Bit << 4;
-    }
-  }
-  All = (1u << Build->NWords) - 1;
-  LogPrint (
-    Log, "sdcc %s: img=0x%llx patched=0x%llx (0x%llx = all)", Build->Name,
-    (UINT64)Base, (UINT64)Done, (UINT64)All
-  );
-}
-#endif // SDCC builds
-
-// RP G2: the SD command line pull-up
-
-#ifdef OABL_SDCC_SM7675
-// EFI_DTB_EXTN_PROTOCOL (EFIDtbExtn.h), libfdt-style functions over XBL's
-// UEFI devicetree. FdtGetNodeHandle is the sixth, after the version.
-STATIC EFI_GUID mDtbExtn = {0x0389b776,
-                            0x625f,
-                            0x11eb,
-                            {0x83, 0xbe, 0xc7, 0x41, 0xa9, 0x13, 0xde, 0x34}};
-#define FDT_GET_NODE_HANDLE_AT 0x30
-
-// fdt_node_handle (DTBDefs.h).
-typedef struct _FDT_NODE {
-  CONST UINT8 *Blob;
-  INT32        Offset;
-} FDT_NODE;
-typedef INT32 (EFIAPI *GET_NODE_HANDLE) (
-  OUT FDT_NODE   *Node,
-  IN CONST UINT8 *Path
-);
-
-STATIC UINT32
-Be32 (IN UINT64 Address)
-{
-  return __builtin_bswap32 (ReadU32 (Address));
-}
-
-STATIC BOOLEAN
-CstrIs (
-  IN UINT64       Address,
-  IN CONST CHAR8 *Name
-)
-{
-  CONST UINT8 *String = (CONST UINT8 *)(UINTN)Address;
-  UINTN        Index  = 0;
-
-  for (; Name[Index]; Index++) {
-    if (String[Index] != (UINT8)Name[Index]) {
-      return FALSE;
-    }
-  }
-  return String[Index] == 0;
-}
-
-// Finds a node's property in place: its value's address and length.
-STATIC BOOLEAN
-FdtProp (
-  IN CONST FDT_NODE *Node,
-  IN CONST CHAR8    *Name,
-  OUT UINT64        *OutAddr,
-  OUT UINT32        *OutLen
-)
-{
-  UINT64 Base = (UINT64)(UINTN)Node->Blob;
-  UINT64 Strings;
-  UINT64 Pos;
-  UINT64 NameLen = 0;
-
-  if (Be32 (Base) != 0xd00dfeed || Node->Offset < 0) {
-    return FALSE;
-  }
-  Strings = Base + Be32 (Base + 12);
-  Pos     = Base + Be32 (Base + 8) + (UINT64)Node->Offset;
-  if (Be32 (Pos) != 1) {
-    return FALSE;
-  }
-  // Skip the node's name, NUL-terminated and padded to a word.
-  Pos += 4;
-  while (*(CONST UINT8 *)(UINTN)(Pos + NameLen) != 0) {
-    NameLen++;
-    if (NameLen > 256) {
-      return FALSE;
-    }
-  }
-  Pos += (NameLen + 4) & ~3ull;
-  for (;;) {
-    switch (Be32 (Pos)) {
-    case 3: { // FDT_PROP: length, name offset, value.
-      UINT32 Len = Be32 (Pos + 4);
-
-      if (CstrIs (Strings + Be32 (Pos + 8), Name)) {
-        *OutAddr = Pos + 12;
-        *OutLen  = Len;
-        return TRUE;
-      }
-      Pos += 12 + ((Len + 3u) & ~3u);
-      break;
-    }
-    case 4: // FDT_NOP
-      Pos += 4;
-      break;
-    default:
-      return FALSE;
-    }
-  }
-}
-
-// Turns on the G2's SD command line pull-up in XBL's UEFI devicetree by
-// giving the command pin's sdc2_active entry the data pins' config word.
-// Returns whether it patched.
-STATIC BOOLEAN
-SdCmdPullup (IN LOG_SINK Log)
-{
-  CONST UINT8    *Proto = LocateProtocol (&mDtbExtn);
-  GET_NODE_HANDLE GetNode;
-  FDT_NODE        Active;
-  FDT_NODE        Cmd;
-  FDT_NODE        Data;
-  UINT64          Config;
-  UINT64          CmdAt  = 0;
-  UINT64          CmdOld = 0;
-  UINT32          ConfigLen;
-  UINT32          CmdPhandle  = 0;
-  UINT32          DataPhandle = 0;
-  UINT32          CmdNew      = 0;
-  BOOLEAN         HaveActive;
-  BOOLEAN         HaveCmd;
-  BOOLEAN         HaveData;
-  BOOLEAN         HaveCmdWord  = FALSE;
-  BOOLEAN         HaveDataWord = FALSE;
-  UINT64          PropAddr;
-  UINT32          PropLen;
-
-  if (!Proto) {
-    LogPrint (
-      Log, "sdcc sm7675: no DTB extension protocol, command line left as is"
-    );
-    return FALSE;
-  }
-  GetNode = *(CONST GET_NODE_HANDLE *)(Proto + FDT_GET_NODE_HANDLE_AT);
-#define NODE(dst, path)                                                        \
-  ((dst) = (FDT_NODE){NULL, -1},                                               \
-   GetNode (&(dst), (CONST UINT8 *)(path)) == 0 && (dst).Blob != NULL)
-  HaveActive = NODE (Active, "/soc/pinctrl@f100000/sdc2_active");
-  HaveCmd    = NODE (Cmd, "/soc/pinctrl@f100000/sdc2_cmd");
-  HaveData   = NODE (Data, "/soc/pinctrl@f100000/sdc2_data0");
-#undef NODE
-  if (!HaveActive || !HaveCmd || !HaveData) {
-    LogPrint (
-      Log, "sdcc sm7675: SD pin nodes not found, command line left as is"
-    );
-    return FALSE;
-  }
-  if (!(FdtProp (&Cmd, "phandle", &PropAddr, &PropLen) && PropLen == 4 &&
-        (CmdPhandle = Be32 (PropAddr), TRUE)) ||
-      !(FdtProp (&Data, "phandle", &PropAddr, &PropLen) && PropLen == 4 &&
-        (DataPhandle = Be32 (PropAddr), TRUE)) ||
-      !FdtProp (&Active, "config", &Config, &ConfigLen)) {
-    LogPrint (
-      Log, "sdcc sm7675: SD pin config not found, command line left as is"
-    );
-    return FALSE;
-  }
-  for (UINT64 Index = 0; Index < ConfigLen / 8; Index++) {
-    UINT64 At      = Config + Index * 8;
-    UINT32 Phandle = Be32 (At);
-
-    if (Phandle == CmdPhandle) {
-      CmdAt       = At + 4;
-      CmdOld      = Be32 (At + 4);
-      HaveCmdWord = TRUE;
-    } else if (Phandle == DataPhandle) {
-      CmdNew       = Be32 (At + 4);
-      HaveDataWord = TRUE;
-    }
-  }
-  if (!HaveCmdWord || !HaveDataWord) {
-    LogPrint (
-      Log, "sdcc sm7675: command or data pin not in sdc2_active, left as is"
-    );
-    return FALSE;
-  }
-  if (CmdOld == CmdNew) {
-    LogPrint (
-      Log, "sdcc sm7675: SD command line already pulled up (0x%llx)",
-      (UINT64)CmdOld
-    );
-    return FALSE;
-  }
-  BOOLEAN Ok = WriteWord (
-    CmdAt, TRUE, __builtin_bswap32 ((UINT32)CmdOld), __builtin_bswap32 (CmdNew)
-  );
-
-  LogPrint (
-    Log,
-    "sdcc sm7675: SD command line pull-up on, as Android has it: config 0x%llx "
-    "-> 0x%llx: %s",
-    (UINT64)CmdOld, (UINT64)CmdNew, Ok ? "patched" : "REFUSED"
-  );
-  return Ok;
-}
-#endif // OABL_SDCC_SM7675
-
-// SdccDxe: the slot state its detection left
-
-#ifdef OABL_SD_DIAGNOSTICS
-// The SD card's slot in SdccDxe's table (SDCC_BSP_SLOT_1, SDC2) and the
-// table's stride (sdcc_slot_type, 0x100 on the MXF builds).
-#define SD_SLOT     1ull
-#define SLOT_STRIDE 0x100ull
-
-// Finds the base and size of the loaded image containing Addr.
-STATIC BOOLEAN
-ImageAround (
-  IN UINT64   Addr,
-  OUT UINT64 *OutBase,
-  OUT UINT64 *OutSize
-)
-{
-  CODE_REGIONS Regions = CodeRegions ();
-  UINT64       Start   = 0;
-  UINT64       Len     = 0;
-  UINT64       Pos;
-  BOOLEAN      Found = FALSE;
-
-  for (UINTN Index = 0; Index < Regions.Count; Index++) {
-    if (Addr >= Regions.Items[Index].Start &&
-        Addr < Regions.Items[Index].Start + Regions.Items[Index].Len) {
-      Start = Regions.Items[Index].Start;
-      Len   = Regions.Items[Index].Len;
-      Found = TRUE;
-      break;
-    }
-  }
-  VecFree (&Regions);
-  if (!Found) {
-    return FALSE;
-  }
-  Pos = Addr & ~(PAGE - 1);
-  for (;;) {
-    CONST UINT8 *Mz = (CONST UINT8 *)(UINTN)Pos;
-
-    if (Mz[0] == 'M' && Mz[1] == 'Z') {
-      UINT64 Pe = ReadU32 (Pos + 0x3c);
-
-      if (Pe >= 0x40 && Pe < 0x1000 && ReadU32 (Pos + Pe) == 0x00004550) {
-        UINT64 Size = ReadU32 (Pos + Pe + 0x50);
-
-        if (Addr < Pos + Size && Pos + Size <= Start + Len) {
-          *OutBase = Pos;
-          *OutSize = Size;
-          return TRUE;
-        }
-      }
-    }
-    if (Pos < Start + PAGE) {
-      return FALSE;
-    }
-    Pos -= PAGE;
-  }
-}
-
-// Finds SdccDxe's slot table by decoding the adrp/add in
-// sdcc_get_slot_handle.
-STATIC BOOLEAN
-SlotTable (
-  IN UINT64   Base,
-  IN UINT64   Size,
-  OUT UINT64 *Out
-)
-{
-  for (UINT64 At = Base; At + 24 <= Base + Size; At += 4) {
-    if (ReadU32 (At) == 0x7100101f &&
-        (ReadU32 (At + 4) & 0xff00001f) == 0x54000002 &&
-        (ReadU32 (At + 12) & 0x9f000000) == 0x90000000 &&
-        (ReadU32 (At + 16) & 0xffc00000) == 0x91000000 &&
-        (ReadU32 (At + 20) & 0xffe0fc1f) == 0x8b002000) {
-      UINT64 Adrp  = ReadU32 (At + 12);
-      UINT64 Pages = ((Adrp >> 29) & 3) | (((Adrp >> 5) & 0x7ffff) << 2);
-      UINT64 Table;
-
-      if (Pages & (1ull << 20)) {
-        Pages |= ~((1ull << 21) - 1);
-      }
-      Table = ((At + 12) & ~(PAGE - 1)) + (Pages << 12) +
-              ((ReadU32 (At + 16) >> 10) & 0xfff);
-      if (Table >= Base && Table + 4 * SLOT_STRIDE <= Base + Size) {
-        *Out = Table;
-        return TRUE;
-      }
-    }
-  }
-  return FALSE;
-}
-
-// SdccDxe's card type codes.
-STATIC CONST CHAR8 *
-CardName (IN UINT32 Type)
-{
-  switch (Type) {
-  case 0:
-    return "none";
-  case 1:
-    return "SD";
-  case 2:
-    return "MMC";
-  case 5:
-    return "SDHC/SDXC";
-  case 6:
-    return "MMC HC";
-  case 7:
-    return "UHS-I";
-  default:
-    return "?";
-  }
-}
-
-// The common SDCC_STATUS codes (sdcc_errno.h).
-STATIC CONST CHAR8 *
-SdccError (IN UINT32 Error)
-{
-  switch (Error) {
-  case 0:
-    return "none";
-  case 1:
-    return "unknown";
-  case 2:
-    return "command timeout";
-  case 3:
-    return "timeout";
-  case 4:
-    return "command CRC";
-  case 5:
-    return "data CRC";
-  case 19:
-    return "switch";
-  case 21:
-    return "card undetected";
-  case 26:
-    return "card init";
-  default:
-    return "other";
-  }
-}
-
-// Logs the SD slot's state. Site, an ACMD41 site, locates SdccDxe.
-STATIC VOID
-SdSlotReport (
-  IN UINT64       Site,
-  IN CONST CHAR8 *When,
-  IN LOG_SINK     Log
-)
-{
-  UINT64       Base;
-  UINT64       Size;
-  UINT64       Table;
-  UINT64       SlotAddr;
-  UINT32       Drive;
-  UINT32       InUse;
-  UINT32       Card;
-  UINT32       StateValue;
-  UINT32       Error;
-  UINT32       Status;
-  UINT32       Rca;
-  UINT32       Class;
-  UINT32       Sectors;
-  CONST CHAR8 *State;
-
-  if (!ImageAround (Site, &Base, &Size)) {
-    LogPrint (Log, "sdcc: no image around the ACMD41 site");
-    return;
-  }
-  if (!SlotTable (Base, Size, &Table)) {
-    LogPrint (Log, "sdcc: SdccDxe's slot table not found");
-    return;
-  }
-  SlotAddr = Table + SD_SLOT * SLOT_STRIDE;
-  Drive    = ReadU32 (SlotAddr);
-  InUse    = ReadU32 (SlotAddr + 4) & 0xff;
-  if (Drive == 0 && InUse == 0) {
-    LogPrint (Log, "sdcc: SD slot %s: not opened yet", When);
-    return;
-  }
-  if ((UINT64)Drive != SD_SLOT || InUse > 1) {
-    LogPrint (
-      Log, "sdcc: SD slot @0x%llx unexpected: drive 0x%llx, in use 0x%llx",
-      (UINT64)SlotAddr, (UINT64)Drive, (UINT64)InUse
-    );
-    return;
-  }
-  Card       = ReadU32 (SlotAddr + 0x14);
-  StateValue = ReadU32 (SlotAddr + 0x18);
-  Error      = ReadU32 (SlotAddr + 0x20);
-  Status     = ReadU32 (SlotAddr + 0x24);
-  Rca        = ReadU32 (SlotAddr + 0x1c) & 0xffff;
-  Class      = ReadU32 (SlotAddr + 0x28);
-  Sectors    = ReadU32 (SlotAddr + 0x2c);
-  State      = StateValue == 0   ? "idle"
-               : StateValue == 1 ? "ident"
-               : StateValue == 2 ? "ready"
-                                 : "?";
-  LogPrint (
-    Log,
-    "sdcc: SD slot %s: card %s, %s, error %llu (%s), status 0x%llx, classed "
-    "%s, RCA 0x%llx, %llu "
-    "sectors",
-    When, CardName (Card), State, (UINT64)Error, SdccError (Error),
-    (UINT64)Status, CardName (Class), (UINT64)Rca, (UINT64)Sectors
-  );
-}
-#endif // OABL_SD_DIAGNOSTICS
-
 UINT32
-QuirksSdccUhs (
-  IN UINT32   Chip,
-  IN LOG_SINK Log
-)
+QuirksSdccUhs (IN LOG_SINK Log)
 {
   U64_LIST    Sites   = Acmd41Sites ();
   TRIES_WORDS Tries   = TriesWords ();
-  BOOLEAN     Xpc     = WantsXpc (Chip);
   UINT32      Patched = 0;
   UINTN       Longer  = 0;
-  BOOLEAN     Pulled  = FALSE;
 
   if (Sites.Count > MAX_SITES) {
     Sites.Count = MAX_SITES;
@@ -1117,14 +492,11 @@ QuirksSdccUhs (
   }
   for (UINTN Index = 0; Index < Sites.Count; Index++) {
     UINT64       Site    = Sites.Items[Index];
-    UINT32       NewWord = Xpc ? MOVK_XPC_S18R_CLEAR : MOVK_S18R_CLEAR;
-    BOOLEAN      Ok      = WriteWord (Site, TRUE, MOVK_S18R_SET, NewWord);
-    CONST CHAR8 *What    = !Ok    ? "REFUSED"
-                           : !Xpc ? "patched"
-                                  : "patched (S18R clear, XPC set)";
+    BOOLEAN Ok = WriteWord (Site, TRUE, MOVK_S18R_SET, MOVK_S18R_CLEAR);
 
     LogPrint (
-      Log, "sdcc: site %llu @0x%llx -> %s", (UINT64)Index, (UINT64)Site, What
+      Log, "sdcc: site %llu @0x%llx -> %s", (UINT64)Index, (UINT64)Site,
+      Ok ? "patched" : "REFUSED"
     );
     Patched += Ok ? 1 : 0;
   }
@@ -1170,32 +542,7 @@ QuirksSdccUhs (
     }
     VecFree (&Speeds);
   }
-#if defined(OABL_SDCC_SM4450) || defined(OABL_SDCC_SM6450) ||                  \
-  defined(OABL_SDCC_SM7675)
-  for (UINTN Build = 0; Build < sizeof (mSdccBuilds) / sizeof (*mSdccBuilds);
-       Build++) {
-    BOOLEAN Match = FALSE;
-
-    for (UINTN Index = 0; Index < mSdccBuilds[Build].NChips; Index++) {
-      if (mSdccBuilds[Build].Chips[Index] == Chip) {
-        Match = TRUE;
-      }
-    }
-    if (Match) {
-      SdccBuild (&mSdccBuilds[Build], Log);
-      break;
-    }
-  }
-#endif
-#ifdef OABL_SD_DIAGNOSTICS
-  if (Sites.Count > 0) {
-    SdSlotReport (Sites.Items[0], "before", Log);
-  }
-#endif
-#ifdef OABL_SDCC_SM7675
-  Pulled = Chip == SM7675_G2 && SdCmdPullup (Log);
-#endif
-  if (Patched > 0 || Longer > 0 || Pulled) {
+  if (Patched > 0 || Longer > 0) {
     // Detection runs inside SignalEvent, as its notify TPL is above ours.
     QuirksSignalSdDetect ();
   }
@@ -1212,317 +559,20 @@ QuirksSdccUhs (
       Ok ? "done" : "REFUSED"
     );
   }
-#ifdef OABL_SD_DIAGNOSTICS
-  if (Sites.Count > 0) {
-    SdSlotReport (Sites.Items[0], "after", Log);
-  }
-#endif
   VecFree (&Tries);
   VecFree (&Sites);
   return Patched;
 }
 
-// PartitionDxe: the GPT "repair"
-
-typedef struct _GPT_SITE {
-  CONST CHAR8 *Name;
-  CONST UINT8 *Sig;
-  CONST UINT8 *Mask;
-  UINTN        Len;
-  // Offset of the patched branch from the signature's start.
-  UINT64 At;
-  UINT32 Orig, Repl;
-} GPT_SITE;
-
-// b +0x18 becomes b +0x04, returning NOT_FOUND as upstream does.
-STATIC CONST UINT8 mPmbrGate[40] = {
-  HIDE (0x1f), HIDE (0x11), HIDE (0x00), HIDE (0xf1), HIDE (0xe1), HIDE (0x00),
-  HIDE (0x00), HIDE (0x54), HIDE (0xf9), HIDE (0x03), HIDE (0x13), HIDE (0xaa),
-  HIDE (0x06), HIDE (0x00), HIDE (0x00), HIDE (0x14), HIDE (0xe0), HIDE (0x03),
-  HIDE (0x14), HIDE (0xaa), HIDE (0x14), HIDE (0x0a), HIDE (0x00), HIDE (0x94),
-  HIDE (0xf3), HIDE (0x03), HIDE (0x19), HIDE (0xaa), HIDE (0x54), HIDE (0x02),
-  HIDE (0x00), HIDE (0x14), HIDE (0xf9), HIDE (0x03), HIDE (0x1f), HIDE (0xaa),
-  HIDE (0x80), HIDE (0x0b), HIDE (0x80), HIDE (0x52)};
-STATIC CONST UINT8 mPmbrGateMask[40] = {
-  1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1};
-
-// cmp x12, x28; b.ne <repair+write>: the b.ne is retargeted to the
-// read-only path.
-STATIC CONST UINT8 mAltLba[52] = {
-  HIDE (0x64), HIDE (0x3d), HIDE (0x10), HIDE (0x33), HIDE (0x8c), HIDE (0x7c),
-  HIDE (0x60), HIDE (0xb3), HIDE (0x9f), HIDE (0x01), HIDE (0x1c), HIDE (0xeb),
-  HIDE (0x61), HIDE (0x0a), HIDE (0x00), HIDE (0x54), HIDE (0xe0), HIDE (0x03),
-  HIDE (0x18), HIDE (0xaa), HIDE (0xe1), HIDE (0x03), HIDE (0x17), HIDE (0xaa),
-  HIDE (0xe2), HIDE (0x03), HIDE (0x1c), HIDE (0xaa), HIDE (0xe3), HIDE (0x03),
-  HIDE (0x19), HIDE (0xaa), HIDE (0x3a), HIDE (0x02), HIDE (0x00), HIDE (0x94),
-  HIDE (0x0c), HIDE (0x1c), HIDE (0x00), HIDE (0x12), HIDE (0x8c), HIDE (0x14),
-  HIDE (0x00), HIDE (0x34), HIDE (0xef), HIDE (0x03), HIDE (0x15), HIDE (0xaa),
-  HIDE (0xf0), HIDE (0x03), HIDE (0x19), HIDE (0xaa)};
-STATIC CONST UINT8 mAltLbaMask[52] = {
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1};
-
-STATIC CONST GPT_SITE mGptSites[2] = {
-  {"pmbr-gate", mPmbrGate, mPmbrGateMask, sizeof (mPmbrGate), 12, 0x14000006,
-   0x14000001},
-  {"alt-lba", mAltLba, mAltLbaMask, sizeof (mAltLba), 12, 0x54000a61,
-   0x54000341},
-};
-
-// A site belongs to PartitionDxe if its name is within this distance.
-#define NAME_WINDOW 0x20000u
-
-STATIC BOOLEAN mGptDone;
-
-STATIC BOOLEAN
-WindowHasName (
-  IN CONST UINT8 *Img,
-  IN UINTN        Lo,
-  IN UINTN        Hi
-)
-{
-  STATIC CONST CHAR8 Name[]  = "PartitionDxe";
-  UINTN              NameLen = sizeof (Name) - 1;
-
-  if (Hi < NameLen) {
-    return FALSE;
-  }
-  for (UINTN Index = Lo; Index + NameLen <= Hi; Index++) {
-    UINTN Match = 0;
-
-    while (Match < NameLen && Img[Index + Match] == (UINT8)Name[Match]) {
-      Match++;
-    }
-    if (Match == NameLen) {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
 VOID
-QuirksGptClobber (
-  IN UINT32   Chip,
-  IN LOG_SINK Log
-)
-{
-  EFI_HANDLE  *Images = NULL;
-  UINTN        Count;
-  UINT64       MeBase = 0;
-  UINT64       MeSize = 0;
-  BOOLEAN      HaveMe;
-  UINT8        Sig0[sizeof (mPmbrGate)];
-  UINT8        Sig1[sizeof (mAltLba)];
-  CONST UINT8 *Sigs[2]    = {Sig0, Sig1};
-  UINT32       Found[2]   = {0, 0};
-  UINT32       Patched[2] = {0, 0};
-
-  if (Chip != SM8250 || mGptDone) {
-    return;
-  }
-  mGptDone = TRUE;
-  Count    = LocateHandles (&gEfiLoadedImageProtocolGuid, &Images);
-  if (!Count) {
-    return;
-  }
-  HaveMe = ImageRange (gImageHandle, &MeBase, &MeSize);
-  Reveal (mGptSites[0].Sig, Sig0, mGptSites[0].Len);
-  Reveal (mGptSites[1].Sig, Sig1, mGptSites[1].Len);
-  for (UINTN Index = 0; Index < Count; Index++) {
-    UINT64       Base;
-    UINT64       Size;
-    CONST UINT8 *Img;
-
-    if (!ImageRange (Images[Index], &Base, &Size)) {
-      continue;
-    }
-    if (HaveMe && Base == MeBase && Size == MeSize) {
-      continue;
-    }
-    Img = (CONST UINT8 *)(UINTN)Base;
-    for (UINTN Offset = 0; Offset + 4 <= Size; Offset += 4) {
-      for (INT32 Site = 0; Site < 2; Site++) {
-        CONST GPT_SITE *Gpt = &mGptSites[Site];
-        UINTN           Lo;
-        UINTN           Hi;
-        UINT64          At;
-
-        if (Img[Offset] != Sigs[Site][0] ||
-            !Matches (Img, Size, Offset, Sigs[Site], Gpt->Mask, Gpt->Len)) {
-          continue;
-        }
-        Lo = Offset > NAME_WINDOW ? Offset - NAME_WINDOW : 0;
-        Hi = Offset + NAME_WINDOW < Size ? Offset + NAME_WINDOW : Size;
-        if (!WindowHasName (Img, Lo, Hi)) {
-          continue;
-        }
-        Found[Site]++;
-        At = Base + Offset + Gpt->At;
-        if (WriteWord (At, TRUE, Gpt->Orig, Gpt->Repl)) {
-          Patched[Site]++;
-          LogPrint (Log, "gpt: %s patched @0x%llx", Gpt->Name, (UINT64)At);
-        }
-      }
-    }
-  }
-  gBS->FreePool (Images);
-  for (INT32 Site = 0; Site < 2; Site++) {
-    LogPrint (
-      Log, "gpt: %s sites=%llu patched=%llu", mGptSites[Site].Name,
-      (UINT64)Found[Site], (UINT64)Patched[Site]
-    );
-  }
-}
-
-// FAT: the FAT cache that runs into the data cache
-
-// EnhancedFatDxe's FAT_VOLUME: signature, VolumeInterface offset and the
-// fields read.
-#define FAT_VOLUME_SIGNATURE 0x76746166ull // 'f','a','t','v' little-endian
-#define VOLUME_INTERFACE_AT  0x18
-#define VOLUME_SIZE          0x48
-#define FAT_POS              0x50
-#define ROOT_POS             0x58
-#define FAT_SIZE             0x68
-// DISK_CACHE fields, header and tag sizes, and how far into the volume to
-// look for the caches.
-#define DC_BASE       0x00
-#define DC_LIMIT      0x08
-#define DC_GROUP_MASK 0x20
-#define DC_HEADER     0x28
-#define DC_TAG        0x18
-#define SCAN_LIMIT    0x2000
-
-VOID
-QuirksFatCache (
-  IN UINT32   Chip,
-  IN LOG_SINK Log
-)
-{
-  EFI_HANDLE *Handles = NULL;
-  UINTN       Count;
-
-  if (Chip != SM8250) {
-    return;
-  }
-  Count = LocateHandles (&gEfiSimpleFileSystemProtocolGuid, &Handles);
-  for (UINTN Index = 0; Index < Count; Index++) {
-    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs =
-      GetProtocol (Handles[Index], &gEfiSimpleFileSystemProtocolGuid);
-    UINT64  V;
-    UINT64  VolSize;
-    UINT64  FatPos;
-    UINT64  RootPos;
-    UINT64  FatSize;
-    UINT64  FatDc  = 0;
-    UINT64  DataDc = 0;
-    UINT64  Offset;
-    UINT64  Stride;
-    UINT64  FatMask;
-    UINT64  DataMask;
-    BOOLEAN HaveFat  = FALSE;
-    BOOLEAN HaveData = FALSE;
-    BOOLEAN Layout;
-
-    if (!Fs) {
-      continue;
-    }
-    V = (UINT64)(UINTN)Fs - VOLUME_INTERFACE_AT;
-    if (ReadU64 (V) != FAT_VOLUME_SIGNATURE) {
-      continue;
-    }
-    VolSize = ReadU64 (V + VOLUME_SIZE);
-    FatPos  = ReadU64 (V + FAT_POS);
-    RootPos = ReadU64 (V + ROOT_POS);
-    FatSize = ReadU64 (V + FAT_SIZE);
-    if (FatPos == 0 || FatSize == 0 || RootPos <= FatPos ||
-        VolSize <= RootPos) {
-      continue;
-    }
-    Offset = 0x70;
-    while (Offset + DC_GROUP_MASK + 8 <= SCAN_LIMIT) {
-      UINT64 CacheBase  = ReadU64 (V + Offset + DC_BASE);
-      UINT64 CacheLimit = ReadU64 (V + Offset + DC_LIMIT);
-
-      if (!HaveFat && CacheBase == FatPos && CacheLimit == FatPos + FatSize) {
-        FatDc   = V + Offset;
-        HaveFat = TRUE;
-      }
-      if (!HaveData && CacheBase == RootPos && CacheLimit == VolSize) {
-        DataDc   = V + Offset;
-        HaveData = TRUE;
-      }
-      Offset += 8;
-    }
-    if (!HaveFat || !HaveData || DataDc <= FatDc) {
-      continue;
-    }
-    Stride   = DataDc - FatDc;
-    FatMask  = ReadU64 (FatDc + DC_GROUP_MASK);
-    DataMask = ReadU64 (DataDc + DC_GROUP_MASK);
-    Layout   = Stride > DC_HEADER && (Stride - DC_HEADER) % DC_TAG == 0 &&
-               DataMask == (Stride - DC_HEADER) / DC_TAG - 1 &&
-               (DataMask & (DataMask + 1)) == 0 && FatMask < 0x10000 &&
-               (FatMask & (FatMask + 1)) == 0;
-    if (!Layout) {
-      LogPrint (
-        Log,
-        "fat cache: layout unconfirmed (stride 0x%llx FatMask %llu DataMask "
-        "%llu), "
-        "skipping; the raw FAT reader will do",
-        (UINT64)Stride, (UINT64)FatMask, (UINT64)DataMask
-      );
-    } else if (FatMask > DataMask) {
-      LogPrint (
-        Log, "fat cache: capped FAT GroupMask %llu -> %llu (volume 0x%llx)",
-        (UINT64)FatMask, (UINT64)DataMask, (UINT64)V
-      );
-      // The layout was confirmed above, so this is the FAT cache's mask.
-      *(volatile UINT64 *)(UINTN)(FatDc + DC_GROUP_MASK) = DataMask;
-    }
-  }
-  if (Handles) {
-    gBS->FreePool (Handles);
-  }
-}
-
-VOID
-QuirksConnectAll (
-  IN UINT32   Chip,
-  IN LOG_SINK Log
-)
-{
-  QuirksGptClobber (Chip, Log);
-  InventoryConnectAll ();
-  NestedDiskPublish (Log);
-  QuirksFatCache (Chip, Log);
-}
-
-VOID
-QuirksPrepareStorage (
-  IN UINT32   Chip,
-  IN LOG_SINK Log
-)
+QuirksPrepareStorage (VOID)
 {
   QuirksSignalSdDetect ();
-  QuirksConnectAll (Chip, Log);
-}
-
-UINT32
-QuirksChipId (VOID)
-{
-  QCOM_CHIP Chip;
-
-  if (!QcomChip (&Chip)) {
-    return 0;
-  }
-  return Chip.Id.Status == EFI_SUCCESS ? Chip.Id.Value : 0;
+  InventoryConnectAll ();
 }
 
 // The storage protocol
 
-STATIC UINT32 mInstalledChip;
 // Entry point for Run, or NULL.
 STATIC OPENABL_STORAGE_RUN mRunFn;
 
@@ -1566,30 +616,7 @@ QuirksAblLog (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   return (LOG_SINK){AblLogSink, (VOID *)(UINTN)Log};
 }
 
-// Copies Bytes and a NUL to Out, following UEFI's size convention:
-// EFI_BUFFER_TOO_SMALL with *Size set when Out is too small.
-STATIC EFI_STATUS
-Give (
-  IN CONST UINT8 *Bytes,
-  IN UINTN        Len,
-  OUT CHAR8      *Out OPTIONAL,
-  IN OUT UINTN   *Size
-)
-{
-  UINTN Need = Len + 1;
-
-  if (!Out || *Size < Need) {
-    *Size = Need;
-    return EFI_BUFFER_TOO_SMALL;
-  }
-  for (UINTN Index = 0; Index < Len; Index++) {
-    Out[Index] = (CHAR8)Bytes[Index];
-  }
-  Out[Len] = 0;
-  *Size    = Need;
-  return EFI_SUCCESS;
-}
-
+// Only AYANEO's and KONKR's panels need androidboot ids, so there are none.
 STATIC EFI_STATUS EFIAPI
 PAndroidParams (
   IN OPENABL_STORAGE_PROTOCOL *This,
@@ -1598,36 +625,17 @@ PAndroidParams (
   IN OPENABL_STORAGE_LOG       Log OPTIONAL
 )
 {
-  OABL_BUFFER Buffer = {0};
-  EFI_STATUS  Status;
-
-  (VOID)This;
-  if (!Size) {
-    return EFI_INVALID_PARAMETER;
-  }
-  CmdLineAndroidParams (QuirksAblLog (Log), &Buffer);
-  if (Buffer.Len == 0) {
-    BufferFree (&Buffer);
-    return EFI_NOT_FOUND;
-  }
-  Status = Give (Buffer.Data, Buffer.Len, Out, Size);
-  BufferFree (&Buffer);
-  return Status;
+  (VOID)This, (VOID)Out, (VOID)Size, (VOID)Log;
+  return EFI_NOT_FOUND;
 }
 
 VOID
 QuirksFixupDeviceTree (
   IN OUT UINT8 *Fdt,
   IN UINTN      Cap,
-  IN BOOLEAN    Usb,
   IN LOG_SINK   Log
 )
 {
-  if (Usb) {
-    UINT32 Chip = mInstalledChip ? mInstalledChip : QuirksChipId ();
-
-    UsbBootFixDeviceTree (Fdt, Cap, Chip, Log);
-  }
   SplashReserveSplash (Fdt, Cap, Log);
 }
 
@@ -1640,12 +648,7 @@ PStartBootImage (
 )
 {
   MENU_HOST        Host;
-  MENU_HOST_STATE  State;
   BOOT_IMAGE_FOUND Found;
-  CONST CHAR8     *Model      = "";
-  CHAR8           *ModelOwned = NULL;
-  OABL_BUFFER      ModelBuf;
-  EFI_STATUS       Status;
 
   (VOID)This;
   if (!Buffer) {
@@ -1655,77 +658,14 @@ PStartBootImage (
   if (!MenuHostLocate (&Host)) {
     return EFI_UNSUPPORTED;
   }
-  // Linux boot mode only; in Android mode Qualcomm's BootLinux starts it.
-  if (MenuHostState (&Host, &State) == EFI_SUCCESS && State.BootMode != 0) {
-    QuirksToAbl (Log, "boot image: the Android boot mode: Qualcomm's boot");
+  // Only while PortareOS starts first; with Android first, Qualcomm's
+  // BootLinux starts it.
+  if (VariablesAndroidFirst ()) {
+    QuirksToAbl (Log, "boot image: Android starts first: Qualcomm's boot");
     return EFI_UNSUPPORTED;
   }
-  if (VariablesGet (SETTINGS_KEY_MODEL, &ModelBuf)) {
-    ModelOwned = Utf8Lossy (ModelBuf.Data, ModelBuf.Len);
-    if (ModelOwned) {
-      Model = ModelOwned;
-    }
-    BufferFree (&ModelBuf);
-  }
-  Found  = (BOOT_IMAGE_FOUND){.Buffer = Buffer, .Size = Size, .Usb = FALSE};
-  Status = BootImageStartVerified (&Host, &Found, Model, QuirksAblLog (Log));
-  FreePool (ModelOwned);
-  return Status;
-}
-
-// Reads the one-byte setting Key. FALSE if it isn't one byte.
-STATIC BOOLEAN
-SettingByte (
-  IN CONST CHAR8 *Key,
-  OUT UINT8      *Out
-)
-{
-  OABL_BUFFER Buffer = {0};
-  BOOLEAN     Ok     = FALSE;
-
-  if (VariablesGet (Key, &Buffer)) {
-    if (Buffer.Len == 1) {
-      *Out = Buffer.Data[0];
-      Ok   = TRUE;
-    }
-    BufferFree (&Buffer);
-  }
-  return Ok;
-}
-
-// Returns 1 if the one-byte setting Key is set and nonzero, else 0.
-STATIC UINT8
-SettingOn (IN CONST CHAR8 *Key)
-{
-  UINT8 Value;
-
-  return SettingByte (Key, &Value) && Value != 0 ? 1 : 0;
-}
-
-QUIRKS_ABL_SETTINGS
-QuirksAblSettings (VOID)
-{
-  QUIRKS_ABL_SETTINGS Settings = {0};
-  UINT8               Value;
-  // Mapped from the settings' numbering (Auto 0, Internal 1, SD card 2,
-  // USB 3) to devinfo's.
-  UINT8 BootSource;
-
-  if (SettingByte (SETTINGS_KEY_BOOT_SOURCE, &Value)) {
-    BootSource = Value == 1 ? 0 : Value == 2 ? 3 : Value == 3 ? 2 : 1;
-  } else {
-    BootSource = 1;
-  }
-  Settings.BootMode    = SettingOn (SETTINGS_KEY_BOOT_MODE);
-  Settings.AblMode     = SettingOn (SETTINGS_KEY_ABL_MODE);
-  Settings.AltVolumeUp = SettingOn (SETTINGS_KEY_ALT_VOLUME_UP);
-  Settings.BootSource  = BootSource;
-  if (SettingByte (SETTINGS_KEY_OFFMODE_CHARGING, &Value)) {
-    Settings.OffmodeCharging = Value != 0 ? 1 : 0;
-  } else {
-    Settings.OffmodeCharging = QUIRKS_SETTING_UNSET;
-  }
-  return Settings;
+  Found = (BOOT_IMAGE_FOUND){.Buffer = Buffer, .Size = Size};
+  return BootImageStartVerified (&Host, &Found, QuirksAblLog (Log));
 }
 
 STATIC VOID EFIAPI
@@ -1745,17 +685,16 @@ PBootPrep (
     SignalGroup (&gEfiEndOfDxeEventGroupGuid);
     LogLine (Sink, "boot: ReadyToBoot and EndOfDxe signalled");
   }
-  QuirksPrepareStorage (mInstalledChip, Sink);
+  QuirksPrepareStorage ();
 }
 
 EFI_STATUS
-QuirksInstallProtocol (IN UINT32 Chip)
+QuirksInstallProtocol (VOID)
 {
   OPENABL_STORAGE_PROTOCOL *Protocol;
   EFI_HANDLE                Handle = NULL;
 
-  mInstalledChip = Chip;
-  Protocol       = AllocatePool (sizeof (*Protocol));
+  Protocol = AllocatePool (sizeof (*Protocol));
   if (!Protocol) {
     return EFI_OUT_OF_RESOURCES;
   }
@@ -1763,63 +702,10 @@ QuirksInstallProtocol (IN UINT32 Chip)
   Protocol->BootPrep       = PBootPrep;
   Protocol->Run            = mRunFn;
   Protocol->StartBootImage = PStartBootImage;
-  Protocol->LogSink        = AblConsoleSink;
+  // The ABL's debug output has nowhere to go.
+  Protocol->LogSink        = NULL;
   // Never freed: the interface lives as long as the menu.
   return gBS->InstallProtocolInterface (
     &Handle, &mStorageGuid, EFI_NATIVE_INTERFACE, Protocol
   );
-}
-
-// Security override
-
-STATIC EFI_STATUS EFIAPI
-Accept (
-  IN CONST EFI_SECURITY_ARCH_PROTOCOL *This,
-  IN UINT32                            AuthenticationStatus,
-  IN CONST EFI_DEVICE_PATH_PROTOCOL   *File
-)
-{
-  return EFI_SUCCESS;
-}
-
-STATIC EFI_STATUS EFIAPI
-Accept2 (
-  IN CONST EFI_SECURITY2_ARCH_PROTOCOL *This,
-  IN CONST EFI_DEVICE_PATH_PROTOCOL    *DevicePath OPTIONAL,
-  IN VOID                              *FileBuffer OPTIONAL,
-  IN UINTN                              FileSize,
-  IN BOOLEAN                            BootPolicy
-)
-{
-  return EFI_SUCCESS;
-}
-
-STATIC BOOLEAN mDone;
-
-VOID
-SecurityAcceptAll (IN LOG_SINK Log)
-{
-  EFI_SECURITY_ARCH_PROTOCOL  *Security;
-  EFI_SECURITY2_ARCH_PROTOCOL *Security2;
-  CHAR8                        Line[96] = "security: ";
-
-  if (mDone) {
-    return;
-  }
-  mDone = TRUE;
-  // The function pointers are writable data; replace them in place.
-  Security = LocateProtocol (&gEfiSecurityArchProtocolGuid);
-  if (Security) {
-    Security->FileAuthenticationState = Accept;
-  } else {
-    AsciiStrAppend (Line, sizeof (Line), "no Security protocol; ");
-  }
-  Security2 = LocateProtocol (&gEfiSecurity2ArchProtocolGuid);
-  if (Security2) {
-    Security2->FileAuthentication = Accept2;
-  } else {
-    AsciiStrAppend (Line, sizeof (Line), "no Security2 protocol; ");
-  }
-  AsciiStrAppend (Line, sizeof (Line), "every image accepted");
-  LogLine (Log, Line);
 }

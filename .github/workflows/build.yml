@@ -13,11 +13,6 @@ on:
       tag:
         description: Tag to build
         required: true
-      build:
-        description: Build
-        type: choice
-        options: [release, debug]
-        default: release
 
 permissions:
   contents: read
@@ -29,19 +24,13 @@ jobs:
     timeout-minutes: 240
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
-      SUFFIX: ${{ inputs.build == 'debug' && '-debug' || '' }}
     outputs:
       fetched: ${{ steps.sources.outputs.fetched }}
-      commit: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
           persist-credentials: false
-
-      - name: Note the commit
-        id: commit
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # The fetched sources are kept in the "sources" release, one file per set
       # of pins in Scripts/fetch.sh, so they are fetched only after a pin changes.
@@ -61,7 +50,7 @@ jobs:
           fi
 
       - name: Build
-        run: ./build.sh all ${{ inputs.build == 'debug' && '--debug' || '' }}
+        run: ./build.sh all
 
       - name: Keep the log
         if: failure()
@@ -76,7 +65,7 @@ jobs:
           mkdir store
           tar -cf "store/${{ steps.sources.outputs.key }}.tar" \
             --exclude=build/edk2/.git/openabl-patch --exclude=build/edk2/.git/index \
-            build/edk2/.git build/microui build/qtestsign
+            build/edk2/.git build/qtestsign
 
       - uses: actions/upload-artifact@v7
         if: steps.sources.outputs.fetched == 'true'
@@ -89,9 +78,7 @@ jobs:
       - name: Collect the images
         run: |
           mkdir dist
-          cp build/out/abl_signed-SM8550.elf "dist/abl_signed-SM8550$SUFFIX.elf"
-          cp build/out/openabl-recovery-flashable-sm8550.zip \
-            "dist/openabl-recovery-flashable-sm8550$SUFFIX.zip"
+          cp build/out/abl_signed-SM8550.elf build/out/openabl-recovery-flashable-sm8550.zip dist/
 
       - uses: actions/upload-artifact@v7
         with:
@@ -107,9 +94,6 @@ jobs:
       contents: write
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
-      # Debug builds go to a pre-release of their own.
-      RELEASE: ${{ inputs.build == 'debug' && format('debug-{0}', inputs.tag) || inputs.tag || github.ref_name }}
-      COMMIT: ${{ needs.build.outputs.commit }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -138,13 +122,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if [ "$RELEASE" = "$TAG" ]; then
-            gh release view "$TAG" > /dev/null 2>&1 ||
-              gh release create "$TAG" --verify-tag --title "Portare BIOS $TAG" \
-                --notes "For the Retroid Pocket Nova: flash abl_signed-SM8550.elf to abl_a and abl_b, or install openabl-recovery-flashable-sm8550.zip from Android's recovery."
-          else
-            gh release view "$RELEASE" > /dev/null 2>&1 ||
-              gh release create "$RELEASE" --prerelease --target "$COMMIT" --title "Portare BIOS $TAG debug" \
-                --notes "Debug build of $TAG, unreleased: for testing only."
-          fi
-          gh release upload "$RELEASE" dist/* --clobber
+          gh release view "$TAG" > /dev/null 2>&1 ||
+            gh release create "$TAG" --verify-tag --title "Portare BIOS $TAG" \
+              --notes "For the Retroid Pocket Nova: flash abl_signed-SM8550.elf to abl_a and abl_b, or install openabl-recovery-flashable-sm8550.zip from Android's recovery."
+          gh release upload "$TAG" dist/* --clobber

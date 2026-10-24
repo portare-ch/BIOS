@@ -9,16 +9,7 @@
 
 #include "Efi/Splash.h"
 
-#include "Core/Panel.h"
-#include "Efi/DisplayHandover.h"
 #include "Efi/Handover.h"
-
-STATIC BOOLEAN
-DisplayOffAsked (VOID)
-{
-  return (DisplayHandoverQuiesceSetting () &
-          (DISPLAY_HANDOVER_QUIESCE | DISPLAY_HANDOVER_LINES_OFF)) != 0;
-}
 
 // Returns the pages of the first graphics output's framebuffer.
 STATIC BOOLEAN
@@ -42,7 +33,7 @@ FramebufferPages (
 
 // Whether the tree already reserves the splash, as Android's and some
 // Linux trees do.
-BOOLEAN
+STATIC BOOLEAN
 SplashHasRegion (
   IN CONST UINT8 *Fdt,
   IN UINTN        Cap
@@ -66,9 +57,6 @@ SplashReserveSplash (
   UINT64       Length;
   BOOLEAN      Added;
 
-  if (DisplayOffAsked ()) {
-    return;
-  }
   if (SplashHasRegion (Fdt, Cap)) {
     return;
   }
