@@ -21,9 +21,8 @@ fastboot flash abl_b abl_signed-SM8550.elf
 fastboot reboot
 ```
 
-For installation through Android recovery, use
-`openabl-recovery-flashable-sm8550.zip` from the same release. It flashes
-both slots and restores BIOS after compatible Android OTA updates.
+For bootloader recovery on the Nova through Qualcomm EDL mode, see the
+[Nova recovery kit](https://github.com/portare-ch/nova_recovery).
 
 ## Using it
 
