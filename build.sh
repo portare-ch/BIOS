@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
+# Copyright (C) 2026-present PortareOS
+#   https://portare.org
 # Builds the ABL with the menu program for the Retroid Pocket Nova's
 # chipset, SM8550 (`all` means the same):
 #
-#   ./build.sh <sm8550|all> [--debug] [--no-standard-boot] [--clean]
+#   ./build.sh <sm8550|all> [--clean]
 #
 # Needs git, and Docker or Apple's container. The sources are fetched by
 # Scripts/fetch.sh; the program (Makefile) and the ABL (Scripts/abl.sh) are
@@ -25,28 +27,24 @@ WORKSPACE=/workspaces/LinuxLoader
 CHIPSETS="sm8550"
 
 usage() {
-  echo "usage: ./build.sh <sm8550|all> [--debug] [--no-standard-boot] [--clean]" >&2
+  echo "usage: ./build.sh <sm8550|all> [--clean]" >&2
   echo "chipsets: $CHIPSETS" >&2
   exit 1
 }
 
 # The chipset's settings, as in Qualcomm's make_abl.sh: signing version,
-# protected VM firmware, whether XBL has the kernel protocol, whether to
-# bundle edk2's USB host stack, extra ABL make parameters, and extra
-# program features. SM8550 needs no extras.
+# protected VM firmware, and whether XBL has the kernel protocol.
 chipset() {
-  SIGN=-v7 PVMFW=true KERNEL_PROTOCOL=1 BUNDLED_USB=0 ABL_EXTRA="" OWN="" OWN_FULL=""
+  SIGN=-v7 PVMFW=true KERNEL_PROTOCOL=1
   case $1 in
     sm8550) ;;
     *) echo "unknown chipset $1" >&2; usage ;;
   esac
 }
 
-DEBUG=0 STANDARD_BOOT=1 CLEAN=0 ASKED=()
+CLEAN=0 ASKED=()
 while [ $# -gt 0 ]; do
   case $1 in
-    --debug) DEBUG=1 ;;
-    --no-standard-boot) STANDARD_BOOT=0 ;;
     --clean) CLEAN=1 ;;
     -*) echo "unknown option $1" >&2; usage ;;
     all) ASKED+=($CHIPSETS) ;;
@@ -107,17 +105,10 @@ export ABL_CLEAN=$CLEAN
 "
 for soc in "${ASKED[@]}"; do
   chipset "$soc"
-  features=""
-  [ "$STANDARD_BOOT" = 1 ] && features="standard-boot,card-logo${OWN_FULL:+,$OWN_FULL}"
-  for f in $OWN $([ "$DEBUG" = 1 ] && echo debug); do
-    features="${features:+$features,}$f"
-  done
   params=("${COMMON[@]}" "PVMFW_ENABLED=$PVMFW" "DISABLE_KERNEL_PROTOCOL=$((1 - KERNEL_PROTOCOL))")
-  [ "$BUNDLED_USB" = 1 ] && params+=(ABL_USB_HOST_BUNDLED_STACK=1)
-  [ -n "$ABL_EXTRA" ] && params+=("$ABL_EXTRA")
   quoted=$(printf " '%s'" "${params[@]}")
-  SCRIPT+="echo \"Building the program for $soc ($features)\"
-make -s -C /openabl FEATURES='$features' OBJ=build/obj-abl OUT=build/menu/$soc || { echo \"ERROR: the program didn't build for $soc.\"; exit 1; }
+  SCRIPT+="echo \"Building the program for $soc\"
+make -s -C /openabl OBJ=build/obj-abl OUT=build/menu/$soc || { echo \"ERROR: the program didn't build for $soc.\"; exit 1; }
 build $soc /openabl/build/menu/$soc/openabl-menu.efi $SIGN$quoted || exit 1
 "
 done

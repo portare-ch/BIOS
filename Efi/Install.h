@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -39,7 +41,7 @@
 #include "Efi/Efi.h"
 
 #include "Core/Gpt.h"
-#include "Efi/Serial.h"
+#include "Efi/Log.h"
 
 typedef enum {
   INSTALL_DUALBOOT,

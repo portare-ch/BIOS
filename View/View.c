@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -173,19 +175,17 @@ FooterDraw (
   IN BOOLEAN      Move
 )
 {
-  GRID   *G        = &mView.Grid;
-  BOOLEAN Handheld = A->Scheme == SCHEME_HANDHELD;
-  CHAR8   Hint[64];
+  GRID *G = &mView.Grid;
+  CHAR8 Hint[64];
 
+  (VOID)A;
   GridRule (G, G->Rows - 2, GLYPH_RULE, ATTR_MID);
-  AsciiStrCopy (Hint, sizeof (Hint), Handheld ? gStrings->KeyPower
-                                              : gStrings->KeyEnter);
+  AsciiStrCopy (Hint, sizeof (Hint), gStrings->KeyPower);
   AsciiStrAppend (Hint, sizeof (Hint), " ");
   AsciiStrAppend (Hint, sizeof (Hint), Verb);
   GridPuts (G, 1, G->Rows - 1, Hint, ATTR_TEXT);
   if (Move) {
-    AsciiStrCopy (Hint, sizeof (Hint), Handheld ? gStrings->KeyVolume
-                                                : gStrings->KeyArrows);
+    AsciiStrCopy (Hint, sizeof (Hint), gStrings->KeyVolume);
     AsciiStrAppend (Hint, sizeof (Hint), " ");
     AsciiStrAppend (Hint, sizeof (Hint), gStrings->VerbMove);
     GridPutsRight (G, G->Cols - 1, G->Rows - 1, Hint, ATTR_TEXT);
@@ -243,15 +243,15 @@ TargetName (
 )
 {
   if (Target == BOOT_TARGET_ORDER) {
-    Target = A->Settings.BootMode == BOOT_MODE_ANDROID ? BOOT_TARGET_ANDROID
-                                                       : BOOT_TARGET_PORTAREOS;
+    Target = A->BootMode == BOOT_MODE_ANDROID ? BOOT_TARGET_ANDROID
+                                              : BOOT_TARGET_PORTAREOS;
   }
   return Target == BOOT_TARGET_ANDROID ? gStrings->Android
                                        : gStrings->PortareOs;
 }
 
-// The sections and their items, and under a rule a note: the countdown, a
-// toast, or what the focused item does.
+// The sections and their items, and under a rule a note: a toast, or what
+// the focused item does.
 STATIC VOID
 MenuDraw (IN OUT APP *A)
 {
@@ -259,9 +259,7 @@ MenuDraw (IN OUT APP *A)
   ROW          Rows[MAX_ROWS];
   LINE         Lines[MAX_ROWS * 2];
   ITEM_VIEW    Focused;
-  CHAR8        Note[160];
   CONST CHAR8 *NoteText;
-  UINT64       Seconds;
   UINTN        Count     = AppRows (A, Rows);
   UINTN        Focus     = AppFocusedRow (A, Rows, Count);
   UINTN        LineCount = 0;
@@ -287,17 +285,6 @@ MenuDraw (IN OUT APP *A)
   NoteText = Focused.Help;
   if (A->ToastUntil) {
     NoteText = A->Toast;
-  }
-  if (AppCountdownSeconds (A, &Seconds)) {
-    CHAR8        Number[8];
-    CONST CHAR8 *Args[2] = {TargetName (A, BOOT_TARGET_ORDER), Number};
-
-    AsciiStrFromU64 (Number, sizeof (Number), Seconds);
-    LangFill (Note, sizeof (Note), gStrings->Countdown, Args, 2);
-    AsciiStrAppend (Note, sizeof (Note), ". ");
-    AsciiStrAppend (Note, sizeof (Note), gStrings->AnyKeyToStay);
-    AsciiStrAppend (Note, sizeof (Note), ".");
-    NoteText = Note;
   }
 
   HeaderDraw (A, NULL);
@@ -342,7 +329,7 @@ MenuDraw (IN OUT APP *A)
   FooterDraw (A, Focused.Verb, TRUE);
 }
 
-// Lists: device models, boot entries, and the device info or the log
+// Lists: the boot list and the sizes Android can keep
 
 // Gets list row Index's label, and its value in Value (Cap bytes).
 typedef VOID (*LIST_ROW) (
@@ -383,7 +370,7 @@ ListDraw (
   for (UINTN Index = List->Scroll;
        Index < Count && Index < List->Scroll + Height; Index++) {
     CONST CHAR8 *Label;
-    CHAR8        Value[MODEL_LEN + 16];
+    CHAR8        Value[64];
 
     Value[0] = 0;
     Row (A, Index, &Label, Value, sizeof (Value));
@@ -397,31 +384,6 @@ ListDraw (
     List->Scroll + Height < Count
   );
   FooterDraw (A, Verb, TRUE);
-}
-
-// "Firmware default", each model, "Back".
-STATIC VOID
-ModelRow (
-  IN CONST APP     *A,
-  IN UINTN          Index,
-  OUT CONST CHAR8 **Label,
-  OUT CHAR8        *Value,
-  IN UINTN          Cap
-)
-{
-  CONST CHAR8 *Current = A->Settings.Model;
-
-  if (Index == 0) {
-    *Label = gStrings->FirmwareDefault;
-  } else if (Index <= A->ModelCount) {
-    *Label = A->Models[Index - 1].Name;
-  } else {
-    *Label = gStrings->Back;
-    return;
-  }
-  if (Index == 0 ? !Current[0] : AsciiStrEq (*Label, Current)) {
-    AsciiStrCopy (Value, Cap, gStrings->Current);
-  }
 }
 
 // Each system with where it boots from, then "Back".
@@ -443,31 +405,8 @@ EntryRow (
   Entry  = &A->Entries[Index];
   *Label = Entry->Title;
   AsciiStrCopy (
-    Value, Cap,
-    Entry->Bad         ? gStrings->NoTriesLeft
-    : Entry->Removable ? gStrings->SdCard
-                       : gStrings->Internal
+    Value, Cap, Entry->Removable ? gStrings->SdCard : gStrings->Internal
   );
-}
-
-// A label and its value, or a bare line of the log.
-STATIC VOID
-TextRow (
-  IN CONST APP     *A,
-  IN UINTN          Index,
-  OUT CONST CHAR8 **Label,
-  OUT CHAR8        *Value,
-  IN UINTN          Cap
-)
-{
-  CONST TEXT_LINE *Line = &A->Lines[Index];
-
-  if (!Line->Label[0]) {
-    *Label = Line->Value;
-    return;
-  }
-  *Label = Line->Label;
-  AsciiStrCopy (Value, Cap, Line->Value);
 }
 
 // Screens without a list
@@ -553,8 +492,9 @@ BootingDraw (IN CONST APP *A)
 STATIC VOID
 ErrorDraw (IN CONST APP *A)
 {
-  CONST CHAR8 *Title, *Message, *Hint;
-  CONST CHAR8 *Verb = gStrings->VerbMenu;
+  CONST CHAR8 *Title   = "";
+  CONST CHAR8 *Message = "";
+  CONST CHAR8 *Hint    = "";
   UINT32       X, Y, Width;
   UINT32       Bottom = mView.Grid.Rows - 2;
 
@@ -611,19 +551,13 @@ ErrorDraw (IN CONST APP *A)
     Message = A->ErrorDetail;
     Hint    = A->InstallChanged ? gStrings->InstallChangedHint : "";
     break;
-  default:
-    Title   = gStrings->ErrModelTitle;
-    Message = gStrings->ErrModelMsg;
-    Hint    = "";
-    Verb    = gStrings->VerbSelect;
-    break;
   }
   HeaderDraw (A, NULL);
   Block (&X, &Y, &Width);
   Paragraph (X, &Y, Width, Bottom, Title, ATTR_BRIGHT, 1);
   Paragraph (X, &Y, Width, Bottom, Message, ATTR_TEXT, 1);
   Paragraph (X, &Y, Width, Bottom, Hint, ATTR_TEXT, 1);
-  FooterDraw (A, Verb, FALSE);
+  FooterDraw (A, gStrings->VerbMenu, FALSE);
 }
 
 // A partition's size in decimal units, as storage is sold: "2.1 GB" under
@@ -1024,7 +958,7 @@ ViewRotate (IN UINT16 Degrees)
     return;
   }
   mView.Rotation = Degrees % 360;
-  LogicalSize (mView.Panel.W, mView.Panel.H, mView.Rotation, &W, &H);
+  ViewLogicalSize (&W, &H);
   GridFree (&mView.Grid);
   // A new grid draws all of itself on the next flush.
   mView.Ready   = GridInit (&mView.Grid, (INT32)W, (INT32)H);
@@ -1037,7 +971,10 @@ ViewLogicalSize (
   OUT UINT32 *H
 )
 {
-  LogicalSize (mView.Panel.W, mView.Panel.H, mView.Rotation, W, H);
+  BOOLEAN Turned = mView.Rotation % 180 == 90;
+
+  *W = Turned ? mView.Panel.H : mView.Panel.W;
+  *H = Turned ? mView.Panel.W : mView.Panel.H;
 }
 
 VOID
@@ -1054,12 +991,6 @@ ViewSync (IN OUT APP *A)
   case SCREEN_CONFIRM:
     ConfirmDraw (A);
     break;
-  case SCREEN_MODELS:
-    ListDraw (
-      A, gStrings->DeviceModel, A->ModelCount + 2, &A->ModelList, ModelRow,
-      gStrings->VerbSelect
-    );
-    break;
   case SCREEN_ENTRIES:
     // Back, the last row, returns to the menu.
     ListDraw (
@@ -1067,15 +998,6 @@ ViewSync (IN OUT APP *A)
       A->EntryList.Focus < A->EntryCount ? gStrings->VerbLaunch
                                          : gStrings->VerbMenu
     );
-    break;
-  case SCREEN_LINES:
-    ListDraw (
-      A, A->LinesTitle, A->LineCount, &A->InfoList, TextRow,
-      gStrings->VerbMenu
-    );
-    break;
-  case SCREEN_SCANNING:
-    StatusDraw (A, gStrings->LookingForDts, gStrings->FewSeconds, NULL);
     break;
   case SCREEN_BOOTING:
     BootingDraw (A);

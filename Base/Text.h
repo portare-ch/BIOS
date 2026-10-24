@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -147,35 +149,10 @@ TextEqStr (
   IN CONST CHAR8 *B
 );
 
-// Compares ASCII letters without regard to case.
-BOOLEAN
-TextEqNoCase (
-  IN OABL_TEXT    A,
-  IN CONST CHAR8 *B
-);
-
 BOOLEAN
 TextStartsWith (
   IN OABL_TEXT    Text,
   IN CONST CHAR8 *Prefix
-);
-
-BOOLEAN
-TextEndsWith (
-  IN OABL_TEXT    Text,
-  IN CONST CHAR8 *Suffix
-);
-
-BOOLEAN
-TextStartsWithNoCase (
-  IN OABL_TEXT    Text,
-  IN CONST CHAR8 *Prefix
-);
-
-BOOLEAN
-TextEndsWithNoCase (
-  IN OABL_TEXT    Text,
-  IN CONST CHAR8 *Suffix
 );
 
 BOOLEAN
@@ -230,30 +207,6 @@ TextTrimStart (IN OABL_TEXT Text);
 OABL_TEXT
 TextTrimEnd (IN OABL_TEXT Text);
 
-// Splits Text at the first Separator. Fails if there is none.
-BOOLEAN
-TextSplitOnce (
-  IN OABL_TEXT   Text,
-  IN CHAR8       Separator,
-  OUT OABL_TEXT *Before,
-  OUT OABL_TEXT *After
-);
-
-// Takes the next line from Rest. A \r before the \n is dropped, and a final
-// \n doesn't start an empty line.
-BOOLEAN
-TextNextLine (
-  IN OUT OABL_TEXT *Rest,
-  OUT OABL_TEXT    *Line
-);
-
-// Takes the next whitespace-separated word from Rest.
-BOOLEAN
-TextNextWord (
-  IN OUT OABL_TEXT *Rest,
-  OUT OABL_TEXT    *Word
-);
-
 // Takes the next piece of Rest up to Separator. Empty pieces are kept and
 // an empty string is one piece. Set Done to FALSE before the first call.
 BOOLEAN
@@ -262,15 +215,6 @@ TextNextSplit (
   IN CHAR8          Separator,
   IN OUT BOOLEAN   *Done,
   OUT OABL_TEXT    *Piece
-);
-
-// Parses an unsigned number in base 10 or 16, with an optional '+'. Fails
-// on any other character, on no digits and on overflow.
-BOOLEAN
-TextParseU64 (
-  IN OABL_TEXT Text,
-  IN UINT32    Base,
-  OUT UINT64  *Value
 );
 
 // Returns a terminated copy. AsciiStrDup copies NULL as "".
@@ -303,12 +247,6 @@ StringAppend (
   IN CONST CHAR8     *String
 );
 
-VOID
-StringAppendChar (
-  IN OUT OABL_STRING *Builder,
-  IN CHAR8            Char
-);
-
 STATIC inline VOID
 StringAppendText (
   IN OUT OABL_STRING *Builder,
@@ -323,18 +261,6 @@ StringAppendCodePoint (
   IN OUT OABL_STRING *Builder,
   IN UINT32           CodePoint
 );
-
-VOID
-StringPrint (
-  IN OUT OABL_STRING *Builder,
-  IN CONST CHAR8     *Format,
-  ...
-)
-  __attribute__ ((format (
-    printf,
-    2,
-    3
-  )));
 
 VOID
 StringVPrint (
@@ -356,10 +282,6 @@ StringTake (IN OUT OABL_STRING *Builder);
 
 VOID
 StringFree (IN OUT OABL_STRING *Builder);
-
-// Empties the builder but keeps its memory. Also clears Failed.
-VOID
-StringClear (IN OUT OABL_STRING *Builder);
 
 // UTF-8 and UTF-16
 

@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-source-exception */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /*
@@ -21,41 +23,27 @@
 #define OPENABL_MENU_FLAG_EARLY BIT0
 #define OPENABL_MENU_FLAG_MAIN  BIT1
 
-/* State Flags. */
-#define OPENABL_MENU_STATE_USB_HOST       BIT0
-#define OPENABL_MENU_STATE_ALTERNATE_SLOT BIT1
-#define OPENABL_MENU_STATE_VM_ENABLED     BIT2
-
 #define OPENABL_MENU_ENTRY_FASTBOOT BIT0
 #define OPENABL_MENU_ENTRY_RECOVERY BIT1
 
 #define OPENABL_MENU_ACTION_START                 1
-#define OPENABL_MENU_ACTION_RESTART_BOOTLOADER    2
-#define OPENABL_MENU_ACTION_RECOVERY              3
 #define OPENABL_MENU_ACTION_EMERGENCY             4
 #define OPENABL_MENU_ACTION_POWER_OFF             5
-#define OPENABL_MENU_ACTION_ALTERNATE_SLOT        6
 #define OPENABL_MENU_ACTION_FASTBOOT_START        7
 #define OPENABL_MENU_ACTION_FASTBOOT_STOP         8
 #define OPENABL_MENU_ACTION_FASTBOOT_MENU         9
 #define OPENABL_MENU_ACTION_BOOT_PREP             10
 #define OPENABL_MENU_ACTION_BOOT_ANDROID          11
 #define OPENABL_MENU_ACTION_BOOT_ANDROID_RECOVERY 12
-/* Fastboot's USB gadget off and on, for USB host. */
-#define OPENABL_MENU_ACTION_GADGET_PAUSE          13
-#define OPENABL_MENU_ACTION_GADGET_RESUME         14
 /* Verifies the image from SetBootImage for StartKernel. */
 #define OPENABL_MENU_ACTION_BOOT_IMAGE_VERIFY     15
 /* EFI_SUCCESS if the device powered on to charge. */
 #define OPENABL_MENU_ACTION_CHARGER_BOOT          16
-#define OPENABL_MENU_ACTION_CHARGER_SCREEN_ON     17
-#define OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF    18
 
 typedef struct {
   UINT8  OffmodeCharging; /* Qualcomm's charger screen flag */
-  UINT8  Flags;           /* OPENABL_MENU_STATE_* */
   UINT8  Entry;           /* OPENABL_MENU_ENTRY_* */
-  UINT8  Reserved;
+  UINT8  Reserved[2];
   UINT16 Key;             /* the key held at the start, a SCAN_* code */
   CHAR8  Version[32];     /* the ABL's version */
 } OPENABL_MENU_STATE;
@@ -118,10 +106,6 @@ typedef struct _OPENABL_STORAGE_PROTOCOL OPENABL_STORAGE_PROTOCOL;
 
 typedef VOID (EFIAPI *OPENABL_STORAGE_LOG) (IN CONST CHAR8 *Line);
 
-typedef EFI_STATUS (EFIAPI *OPENABL_STORAGE_ANDROID_PARAMS) (
-    IN OPENABL_STORAGE_PROTOCOL *This, OUT CHAR8 *Params OPTIONAL,
-    IN OUT UINTN *Size, IN OPENABL_STORAGE_LOG Log OPTIONAL);
-
 #define OPENABL_PREP_BOOT BIT0
 typedef VOID (EFIAPI *OPENABL_STORAGE_BOOT_PREP) (
     IN OPENABL_STORAGE_PROTOCOL *This, IN UINT32 Flags,
@@ -138,7 +122,6 @@ typedef VOID (EFIAPI *OPENABL_STORAGE_LOG_SINK) (
     IN CONST UINT8 *Buffer, IN UINTN Size);
 
 struct _OPENABL_STORAGE_PROTOCOL {
-  OPENABL_STORAGE_ANDROID_PARAMS   AndroidParams;
   OPENABL_STORAGE_BOOT_PREP        BootPrep;
   OPENABL_STORAGE_RUN              Run;
   OPENABL_STORAGE_START_BOOT_IMAGE StartBootImage;

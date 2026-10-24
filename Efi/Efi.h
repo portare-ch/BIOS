@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -72,10 +74,6 @@ CompareGuid (
   IN CONST EFI_GUID *Guid1,
   IN CONST EFI_GUID *Guid2
 );
-
-// Starts Image and frees any exit data it returns.
-EFI_STATUS
-StartImageFreeExitData (IN EFI_HANDLE Image);
 
 // Gets the memory map: *Count descriptors, *DescriptorSize bytes apart.
 // Caller frees it with FreePool. NULL on failure.

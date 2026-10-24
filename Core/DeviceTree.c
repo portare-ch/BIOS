@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -380,48 +382,6 @@ Add (
   return DT_OK;
 }
 
-// Returns the node's name, or "" if it can't be read.
-STATIC OABL_TEXT
-NameOf (
-  IN CONST VOID *Fdt,
-  IN INT32       Node
-)
-{
-  INT32        Length;
-  CONST CHAR8 *Name = fdt_get_name (Fdt, Node, &Length);
-
-  return Name ? (OABL_TEXT){Name, (UINTN)Length} : (OABL_TEXT){"", 0};
-}
-
-DT_ERROR
-DtSetPropByCompatible (
-  IN OUT UINT8          *Fdt,
-  IN UINTN               Capacity,
-  IN CONST CHAR8 *CONST *Compatibles,
-  IN UINTN               Count,
-  IN CONST CHAR8        *Name,
-  IN CONST VOID         *Value,
-  IN UINTN               Length
-)
-{
-  INT32 Node;
-
-  // An unreadable header gives DT_NOT_FOUND, not DT_BAD_BLOB.
-  if (!HeaderOk (Fdt, Capacity)) {
-    return DT_NOT_FOUND;
-  }
-  if (!WalkOk (Fdt, NO_NODE)) {
-    return DT_BAD_BLOB;
-  }
-  for (UINTN Index = 0; Index < Count; Index++) {
-    if ((Node = fdt_node_offset_by_compatible (Fdt, -1, Compatibles[Index])) >=
-        0) {
-      return Set (Fdt, (UINTN)Node, Name, Value, Length);
-    }
-  }
-  return DT_NOT_FOUND;
-}
-
 // Lookups and subnodes
 
 BOOLEAN
@@ -433,99 +393,6 @@ DtNodeAtPath (
 )
 {
   return Usable (Fdt, Size, NO_NODE) && AtPath (Fdt, Path, Node);
-}
-
-BOOLEAN
-DtNodeName (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN UINTN        Node,
-  OUT OABL_BYTES *Name
-)
-{
-  CONST CHAR8 *NodeName;
-  INT32        Length;
-
-  if (!Usable (Fdt, Size, Node) ||
-      !(NodeName = fdt_get_name (Fdt, (INT32)Node, &Length))) {
-    return FALSE;
-  }
-  *Name = (OABL_BYTES){(CONST UINT8 *)NodeName, (UINTN)Length};
-  return TRUE;
-}
-
-BOOLEAN
-DtPropAt (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN UINTN        Node,
-  IN CONST CHAR8 *Name,
-  OUT OABL_BYTES *Value
-)
-{
-  return Usable (Fdt, Size, Node) && Get (Fdt, Node, Name, Value);
-}
-
-DT_ERROR
-DtAddSubnode (
-  IN OUT UINT8   *Fdt,
-  IN UINTN        Capacity,
-  IN UINTN        Parent,
-  IN CONST CHAR8 *Name,
-  OUT UINTN      *Node
-)
-{
-  if (!Usable (Fdt, Capacity, Parent)) {
-    return DT_BAD_BLOB;
-  }
-  return Add (Fdt, Parent, Name, Node);
-}
-
-BOOLEAN
-DtChosenHas (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN CONST CHAR8 *Prefix
-)
-{
-  if (!Usable (Fdt, Size, NO_NODE)) {
-    return FALSE;
-  }
-  // Every child of the root named chosen, but not chosen@...
-  for (INT32 Child = fdt_first_subnode (Fdt, 0); Child >= 0;
-       Child       = fdt_next_subnode (Fdt, Child)) {
-    if (!TextEqStr (NameOf (Fdt, Child), "chosen")) {
-      continue;
-    }
-    for (INT32 Grandchild = fdt_first_subnode (Fdt, Child); Grandchild >= 0;
-         Grandchild       = fdt_next_subnode (Fdt, Grandchild)) {
-      if (TextStartsWith (NameOf (Fdt, Grandchild), Prefix)) {
-        return TRUE;
-      }
-    }
-  }
-  return FALSE;
-}
-
-BOOLEAN
-DtNodeChildren (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN UINTN        Node,
-  OUT DT_NODES   *Out
-)
-{
-  *Out = (DT_NODES){0};
-  if (!Usable (Fdt, Size, Node)) {
-    return TRUE;
-  }
-  for (INT32 Child = fdt_first_subnode (Fdt, (INT32)Node); Child >= 0;
-       Child       = fdt_next_subnode (Fdt, Child)) {
-    if (!VecPush (Out, (UINTN)Child)) {
-      return FALSE;
-    }
-  }
-  return TRUE;
 }
 
 STATIC CHAR8 *

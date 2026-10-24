@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -9,7 +11,6 @@
 
 #include "Base/Memory.h"
 #include "Base/Text.h"
-#include "Core/Settings.h"
 #include "Ui/Lang.h"
 #include "Ui/Ui.h"
 
@@ -31,94 +32,42 @@ Command (
   return (COMMAND){.Kind = Kind, .Arg = Arg};
 }
 
-UINTN
-AppSize (VOID)
-{
-  return sizeof (APP);
-}
-
-UINTN
-AppSettingsSize (VOID)
-{
-  return sizeof (SETTINGS);
-}
-
 VOID
 AppInit (
-  OUT APP                *A,
-  IN CONST SETTINGS      *Settings,
-  IN CONST SETTINGS_CAPS *Caps,
-  IN CONST DEVICE_INFO   *Info,
-  IN SCHEME               Scheme,
-  IN CONST CHAR8         *Version
+  OUT APP        *A,
+  IN BOOT_MODE    BootMode,
+  IN BOOLEAN      Android,
+  IN CONST CHAR8 *Version
 )
 {
   ZeroMem (A, sizeof (*A));
-  A->Settings   = *Settings;
-  A->Caps       = *Caps;
-  A->Info       = *Info;
-  A->Scheme     = Scheme;
-  A->Version    = Version;
-  A->Screen     = SCREEN_MENU;
-  A->FocusItem  = ITEM_BOOT;
-  A->LinesTitle = "";
-  A->LinesFrom  = ITEM_BOOT;
-  A->Booting    = -1;
-  A->Dirty      = TRUE;
-  LangSet (Settings->Language);
-}
-
-VOID
-AppSetSettings (
-  IN OUT APP        *A,
-  IN CONST SETTINGS *Settings
-)
-{
-  A->Settings = *Settings;
-  A->Dirty    = TRUE;
-  LangSet (Settings->Language);
-}
-
-VOID
-AppSetCaps (
-  IN OUT APP             *A,
-  IN CONST SETTINGS_CAPS *Caps
-)
-{
-  A->Caps  = *Caps;
-  A->Dirty = TRUE;
-}
-
-VOID
-AppSetPhysicalSize (
-  IN OUT APP *A,
-  IN UINT32   W,
-  IN UINT32   H
-)
-{
-  A->PhysicalW = W;
-  A->PhysicalH = H;
+  A->BootMode  = BootMode;
+  A->Android   = Android;
+  A->Version   = Version;
+  A->Screen    = SCREEN_MENU;
+  A->FocusItem = ITEM_BOOT;
+  A->Booting   = -1;
   A->Dirty     = TRUE;
 }
 
 VOID
-AppSetFirmwareRotation (
-  IN OUT APP *A,
-  IN UINT16   Degrees
+AppSetBootMode (
+  IN OUT APP  *A,
+  IN BOOT_MODE BootMode
 )
 {
-  A->FirmwareRotation = Degrees % 360;
-  A->Dirty            = TRUE;
+  A->BootMode = BootMode;
+  A->Dirty    = TRUE;
 }
 
 VOID
-AppSetExperiments (
-  IN OUT APP           *A,
-  IN CONST EXPERIMENTS *Experiments
+AppSetAndroid (
+  IN OUT APP *A,
+  IN BOOLEAN  Android
 )
 {
-  A->Experiments = *Experiments;
-  A->Dirty       = TRUE;
+  A->Android = Android;
+  A->Dirty   = TRUE;
 }
 
 VOID
@@ -137,23 +86,6 @@ AppSetEntries (
   A->EntryCount = Count;
   A->EntryList  = (LIST_STATE){0};
   A->Dirty      = TRUE;
-}
-
-UINT16
-AppDesiredRotation (IN CONST APP *A)
-{
-  CONST SETTINGS *Settings = &A->Settings;
-  UINT16          Panel;
-
-  if (Settings->Rotation != ROTATION_AUTO) {
-    return SettingsEffectiveRotation (Settings);
-  }
-  if (Settings->ModelRotation == ROTATION_NONE && A->PhysicalH > A->PhysicalW) {
-    Panel = 270;
-  } else {
-    Panel = SettingsEffectiveRotation (Settings);
-  }
-  return (UINT16)((Panel + A->FirmwareRotation) % 360);
 }
 
 STATIC VOID
@@ -176,12 +108,12 @@ BeginBoot (
 )
 {
   if (Target == BOOT_TARGET_ORDER) {
-    Target = A->Settings.BootMode == BOOT_MODE_ANDROID ? BOOT_TARGET_ANDROID
-                                                       : BOOT_TARGET_PORTAREOS;
+    Target = A->BootMode == BOOT_MODE_ANDROID ? BOOT_TARGET_ANDROID
+                                              : BOOT_TARGET_PORTAREOS;
   }
   A->Starting = Target;
   A->Dirty    = TRUE;
-  if (Target == BOOT_TARGET_ANDROID && !A->Caps.Android) {
+  if (Target == BOOT_TARGET_ANDROID && !A->Android) {
     A->Screen = SCREEN_ERROR;
     A->Error  = BOOT_ERROR_ANDROID;
     return None ();
@@ -189,35 +121,6 @@ BeginBoot (
   A->Screen  = SCREEN_BOOTING;
   A->Booting = -1;
   return Command (COMMAND_BOOT, Target);
-}
-
-COMMAND
-AppStart (
-  IN OUT APP *A,
-  IN UINT64   Now,
-  IN BOOLEAN  ForceMenu
-)
-{
-  A->Now   = Now;
-  A->Dirty = TRUE;
-  if (ForceMenu) {
-    return None ();
-  }
-  if (A->Settings.MenuTimeoutS == 0) {
-    return BeginBoot (A, BOOT_TARGET_ORDER);
-  }
-  A->Countdown      = TRUE;
-  A->CountdownUntil = Now + (UINT64)A->Settings.MenuTimeoutS * 1000;
-  return None ();
-}
-
-COMMAND
-AppOpenModels (IN OUT APP *A)
-{
-  A->FocusItem = ITEM_BOOT;
-  A->Screen    = SCREEN_SCANNING;
-  A->Dirty     = TRUE;
-  return Command (COMMAND_SCAN_MODELS, 0);
 }
 
 COMMAND
@@ -231,32 +134,7 @@ AppTick (
     A->ToastUntil = 0;
     A->Dirty      = TRUE;
   }
-  if (A->Countdown) {
-    if (Now >= A->CountdownUntil) {
-      A->Countdown = FALSE;
-      return BeginBoot (A, BOOT_TARGET_ORDER);
-    }
-    UINT64 Seconds = (A->CountdownUntil - Now + 999) / 1000;
-    if (A->ShownCountdown != Seconds) {
-      A->ShownCountdown = Seconds;
-      A->Dirty          = TRUE;
-    }
-  }
   return None ();
-}
-
-BOOLEAN
-AppCountdownSeconds (
-  IN CONST APP *A,
-  OUT UINT64   *Seconds
-)
-{
-  if (!A->Countdown) {
-    return FALSE;
-  }
-  UINT64 Left = A->CountdownUntil > A->Now ? A->CountdownUntil - A->Now : 0;
-  *Seconds    = (Left + 999) / 1000;
-  return TRUE;
 }
 
 // Results from the platform
@@ -264,17 +142,11 @@ AppCountdownSeconds (
 VOID
 AppOnBootResult (
   IN OUT APP     *A,
-  IN BOOLEAN      Ok,
   IN BOOT_ERROR   Error,
   IN CONST CHAR8 *Detail OPTIONAL
 )
 {
-  A->Dirty = TRUE;
-  if (Ok) {
-    A->Screen = SCREEN_MENU;
-    ShowToast (A, gStrings->ToastTargetExited);
-    return;
-  }
+  A->Dirty  = TRUE;
   A->Screen = SCREEN_ERROR;
   A->Error  = Error;
   AsciiStrCopy (A->ErrorDetail, sizeof (A->ErrorDetail), Detail ? Detail : "");
@@ -293,85 +165,6 @@ AppOnPickFailed (
   A->Error      = Gone ? BOOT_ERROR_PICK_GONE : BOOT_ERROR_PICK_FAILED;
   A->PickFromSd = FromSd;
   AsciiStrCopy (A->ErrorDetail, sizeof (A->ErrorDetail), Name);
-}
-
-// Opens the device info or the log (already in A->Lines) at line Focus.
-// Back returns to menu item From.
-STATIC VOID
-ShowLines (
-  IN OUT APP     *A,
-  IN CONST CHAR8 *Title,
-  IN ITEM         From,
-  IN UINTN        Focus
-)
-{
-  A->LinesTitle = Title;
-  A->LinesFrom  = From;
-  A->InfoList   = (LIST_STATE){.Focus = Focus, .Scroll = Focus};
-  A->Screen     = SCREEN_LINES;
-  A->Dirty      = TRUE;
-}
-
-VOID
-AppOnDeviceInfo (
-  IN OUT APP         *A,
-  IN CONST TEXT_LINE *Lines,
-  IN UINTN            Count
-)
-{
-  if (Count > MAX_LINES) {
-    Count = MAX_LINES;
-  }
-  for (UINTN Index = 0; Index < Count; Index++) {
-    A->Lines[Index] = Lines[Index];
-  }
-  A->LineCount = Count;
-  ShowLines (A, gStrings->DeviceInfo, ITEM_BOOT, 0);
-}
-
-VOID
-AppOnLog (
-  IN OUT APP            *A,
-  IN CONST CHAR8 *CONST *Lines,
-  IN UINTN               Count
-)
-{
-  // Keep the newest when there are more than fit.
-  UINTN Skip = Count > MAX_LINES ? Count - MAX_LINES : 0;
-
-  Count -= Skip;
-  for (UINTN Index = 0; Index < Count; Index++) {
-    A->Lines[Index].Label = "";
-    AsciiStrCopy (
-      A->Lines[Index].Value, sizeof (A->Lines[Index].Value), Lines[Skip + Index]
-    );
-  }
-  A->LineCount = Count;
-  ShowLines (A, gStrings->Log, ITEM_BOOT, Count ? Count - 1 : 0);
-}
-
-VOID
-AppOnModels (
-  IN OUT APP     *A,
-  IN CONST MODEL *Models,
-  IN UINTN        Count
-)
-{
-  if (Count > MAX_MODELS) {
-    Count = MAX_MODELS;
-  }
-  A->ModelList = (LIST_STATE){0};
-  for (UINTN Index = 0; Index < Count; Index++) {
-    A->Models[Index] = Models[Index];
-    // Row 0 is "Firmware default", then the models.
-    if (A->Settings.Model[0] && !A->ModelList.Focus &&
-        AsciiStrEq (Models[Index].Name, A->Settings.Model)) {
-      A->ModelList.Focus = Index + 1;
-    }
-  }
-  A->ModelCount = Count;
-  A->Screen     = SCREEN_MODELS;
-  A->Dirty      = TRUE;
 }
 
 VOID
@@ -473,7 +266,6 @@ VOID
 AppStartCharging (IN OUT APP *A)
 {
   A->Screen     = SCREEN_CHARGING;
-  A->Countdown  = FALSE;
   A->ToastUntil = 0;
   A->Dirty      = TRUE;
 }
@@ -541,19 +333,10 @@ AppOnFailed (
   IN CONST CHAR8 *Message
 )
 {
-  if (A->Screen == SCREEN_BOOTING || A->Screen == SCREEN_SCANNING ||
-      A->Screen == SCREEN_CONFIRM || A->Screen == SCREEN_INSTALLING) {
+  if (A->Screen == SCREEN_BOOTING || A->Screen == SCREEN_CONFIRM ||
+      A->Screen == SCREEN_INSTALLING) {
     A->Screen = SCREEN_MENU;
   }
-  ShowToast (A, Message);
-}
-
-VOID
-AppNotify (
-  IN OUT APP     *A,
-  IN CONST CHAR8 *Message
-)
-{
   ShowToast (A, Message);
 }
 
@@ -562,8 +345,9 @@ AppNotify (
 CONST CHAR8 *
 AppBootTitle (IN CONST APP *A)
 {
-  UINTN Index = A->Booting >= 0 ? (UINTN)A->Booting : 0;
-  return Index < A->EntryCount ? A->Entries[Index].Title : NULL;
+  return A->Booting >= 0 && (UINTN)A->Booting < A->EntryCount
+           ? A->Entries[A->Booting].Title
+           : NULL;
 }
 
 UINTN
@@ -572,14 +356,13 @@ AppRows (
   OUT ROW      *Rows
 )
 {
-  CONST SETTINGS_CAPS *Caps  = &A->Caps;
-  UINTN                Count = 0;
+  UINTN Count = 0;
 
 #define ADD_HEADER(Title) (Rows[Count++] = (ROW){.Header = (Title)})
 #define ADD_ITEM(Id)      (Rows[Count++] = (ROW){.Item = (Id)})
   ADD_HEADER (gStrings->SectionStart);
   ADD_ITEM (ITEM_BOOT);
-  if (Caps->Android) {
+  if (A->Android) {
     ADD_ITEM (ITEM_BOOT_ORDER);
   }
   ADD_HEADER (gStrings->SectionStorage);
@@ -588,15 +371,6 @@ AppRows (
   ADD_ITEM (ITEM_EDL);
   ADD_ITEM (ITEM_RESTART);
   ADD_ITEM (ITEM_POWER_OFF);
-  // Experiments, in debug builds only.
-  if (A->Debug && Caps->Embedded) {
-    ADD_HEADER (gStrings->SectionDebug);
-    if (Caps->UsbHost) {
-      ADD_ITEM (ITEM_USB_LIVE);
-    }
-    ADD_ITEM (ITEM_QUIESCE);
-    ADD_ITEM (ITEM_PANEL_LINES);
-  }
 #undef ADD_HEADER
 #undef ADD_ITEM
   return Count;
@@ -658,8 +432,8 @@ AppItemView (
     View->Help  = gStrings->HelpBootOrder;
     AsciiStrCopy (
       Value, Cap,
-      A->Settings.BootMode == BOOT_MODE_ANDROID ? gStrings->OrderAndroidFirst
-                                                : gStrings->OrderPortareOsFirst
+      A->BootMode == BOOT_MODE_ANDROID ? gStrings->OrderAndroidFirst
+                                       : gStrings->OrderPortareOsFirst
     );
     break;
   case ITEM_INSTALL:
@@ -676,19 +450,6 @@ AppItemView (
   case ITEM_POWER_OFF:
     View->Label = gStrings->ShutDown;
     break;
-  case ITEM_USB_LIVE:
-  case ITEM_QUIESCE:
-  case ITEM_PANEL_LINES: {
-    BOOLEAN On  = Item == ITEM_USB_LIVE  ? A->Experiments.UsbLive
-                  : Item == ITEM_QUIESCE ? A->Experiments.Quiesce
-                                         : A->Experiments.PanelLinesOff;
-    View->Label = Item == ITEM_USB_LIVE  ? gStrings->DbgUsbLive
-                  : Item == ITEM_QUIESCE ? gStrings->DbgQuiesce
-                                         : gStrings->DbgPanelLines;
-    View->Verb  = gStrings->VerbChange;
-    AsciiStrCopy (Value, Cap, On ? gStrings->On : gStrings->Off);
-    break;
-  }
   }
 }
 
@@ -701,16 +462,15 @@ Activate (
   IN ITEM     Item
 )
 {
-  EXPERIMENTS *Experiments = &A->Experiments;
-
   switch (Item) {
   case ITEM_BOOT:
     A->Screen    = SCREEN_ENTRIES;
     A->EntryList = (LIST_STATE){0};
     return None ();
   case ITEM_BOOT_ORDER:
-    SettingsToggleBootMode (&A->Settings, &A->Caps);
-    return Command (COMMAND_SAVE_SETTINGS, 0);
+    A->BootMode = A->BootMode == BOOT_MODE_ANDROID ? BOOT_MODE_LINUX
+                                                   : BOOT_MODE_ANDROID;
+    return Command (COMMAND_SAVE_BOOT_MODE, 0);
   case ITEM_INSTALL:
     if (!A->Install.Card) {
       A->Screen         = SCREEN_ERROR;
@@ -731,20 +491,6 @@ Activate (
     return Command (COMMAND_REBOOT, REBOOT_NORMAL);
   case ITEM_POWER_OFF:
     return Command (COMMAND_POWER_OFF, 0);
-  case ITEM_USB_LIVE:
-  case ITEM_QUIESCE:
-  case ITEM_PANEL_LINES: {
-    COMMAND Save = Command (COMMAND_SAVE_EXPERIMENTS, 0);
-    if (Item == ITEM_USB_LIVE) {
-      Experiments->UsbLive = !Experiments->UsbLive;
-    } else if (Item == ITEM_QUIESCE) {
-      Experiments->Quiesce = !Experiments->Quiesce;
-    } else {
-      Experiments->PanelLinesOff = !Experiments->PanelLinesOff;
-    }
-    Save.Experiments = *Experiments;
-    return Save;
-  }
   }
   return None ();
 }
@@ -777,87 +523,6 @@ MenuInput (
     return None ();
   case INPUT_SELECT:
     return Activate (A, Items[Focused]);
-  }
-  return None ();
-}
-
-// Up and down move through the lines, scrolling the list. Select and Back
-// go back to the menu.
-STATIC COMMAND
-InfoInput (
-  IN OUT APP *A,
-  IN INPUT    Input
-)
-{
-  UINTN Count = A->LineCount ? A->LineCount : 1;
-  UINTN Focus = A->InfoList.Focus;
-
-  switch (Input) {
-  case INPUT_UP:
-    A->InfoList.Focus = (Focus + Count - 1) % Count;
-    break;
-  case INPUT_DOWN:
-    A->InfoList.Focus = (Focus + 1) % Count;
-    break;
-  case INPUT_BACK:
-  case INPUT_SELECT:
-    A->Screen    = SCREEN_MENU;
-    A->FocusItem = A->LinesFrom;
-    break;
-  }
-  return None ();
-}
-
-STATIC VOID
-LeaveModels (IN OUT APP *A)
-{
-  A->Screen    = SCREEN_MENU;
-  A->FocusItem = ITEM_BOOT;
-}
-
-STATIC COMMAND
-ModelsInput (
-  IN OUT APP *A,
-  IN INPUT    Input
-)
-{
-  // Rows: "Firmware default", each model, "Back".
-  UINTN Count = A->ModelCount + 2;
-  UINTN Focus = A->ModelList.Focus;
-
-  switch (Input) {
-  case INPUT_UP:
-    A->ModelList.Focus = (Focus + Count - 1) % Count;
-    break;
-  case INPUT_DOWN:
-    A->ModelList.Focus = (Focus + 1) % Count;
-    break;
-  case INPUT_BACK:
-    LeaveModels (A);
-    break;
-  case INPUT_SELECT:
-    if (Focus == 0) {
-      // No model, so the OS gets the firmware's devicetree untouched.
-      A->Settings.Model[0]      = 0;
-      A->Settings.ModelRotation = ROTATION_NONE;
-      LeaveModels (A);
-      ShowToast (A, gStrings->ToastFirmwareDt);
-      return Command (COMMAND_SAVE_SETTINGS, 0);
-    }
-    if (Focus <= A->ModelCount) {
-      CONST MODEL *Model = &A->Models[Focus - 1];
-      CONST CHAR8 *Arg   = Model->Name;
-      CHAR8        Message[160];
-
-      AsciiStrCopy (A->Settings.Model, sizeof (A->Settings.Model), Model->Name);
-      A->Settings.ModelRotation = Model->Rotation;
-      LeaveModels (A);
-      LangFill (Message, sizeof (Message), gStrings->ToastModelSet, &Arg, 1);
-      ShowToast (A, Message);
-      return Command (COMMAND_SAVE_SETTINGS, 0);
-    }
-    LeaveModels (A);
-    break;
   }
   return None ();
 }
@@ -1040,29 +705,16 @@ AppInput (
 )
 {
   A->Dirty = TRUE;
-  if (A->Countdown) {
-    // The first press only stops the countdown.
-    A->Countdown = FALSE;
-    return None ();
-  }
   switch (A->Screen) {
   case SCREEN_MENU:
     return MenuInput (A, Input);
-  case SCREEN_MODELS:
-    return ModelsInput (A, Input);
   case SCREEN_ENTRIES:
     return EntriesInput (A, Input);
   case SCREEN_CONFIRM:
     return ConfirmInput (A, Input);
   case SCREEN_ERROR:
-    if (A->Error == BOOT_ERROR_MODEL_NOT_SET) {
-      A->Screen = SCREEN_SCANNING;
-      return Command (COMMAND_SCAN_MODELS, 0);
-    }
     A->Screen = SCREEN_MENU;
     return None ();
-  case SCREEN_LINES:
-    return InfoInput (A, Input);
   case SCREEN_INSTALL:
     return InstallInput (A, Input);
   case SCREEN_INSTALL_SIZE:
@@ -1078,7 +730,6 @@ AppInput (
     A->Screen    = SCREEN_MENU;
     A->FocusItem = ITEM_BOOT;
     return None ();
-  case SCREEN_SCANNING:
   case SCREEN_BOOTING:
   case SCREEN_INSTALLING:
     return None ();

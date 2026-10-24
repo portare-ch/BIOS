@@ -10,5 +10,5 @@ Thanks also to:
 
 - the [ROCKNIX](https://github.com/ROCKNIX) team
 - Qualcomm's [edk2](https://git.codelinaro.org/clo/la/abl/tianocore/edk2)
-  project, which OpenABL is built from
+  project, which OpenABL and Portare BIOS are built from
 - the community

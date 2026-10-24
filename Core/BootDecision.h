@@ -1,15 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
-  BootDecision - the boot mode chosen from the state read at ABL start, and
-  the drives each boot source allows.
+  BootDecision - what power-on starts, from the state read at ABL start,
+  and the order of the drives PortareOS starts from.
 
   The inputs are the key held (as Qualcomm's GetKeyPress reads it),
-  Qualcomm's fastboot and recovery flags, the menu's settings and the
-  charger check.
+  Qualcomm's fastboot and recovery flags and the Boot order.
 */
 
 #ifndef __CORE_BOOT_DECISION_H__
@@ -17,7 +18,6 @@
 
 #include "Base/OablBase.h"
 
-#include "Core/Settings.h"
 
 // UEFI SCAN_* codes.
 #define BOOT_DECISION_SCAN_UP     0x01
@@ -42,18 +42,12 @@ BootDecisionFastboot (IN CONST BOOT_DECISION_START *Start);
 BOOLEAN
 BootDecisionUpHeld (IN CONST BOOT_DECISION_START *Start);
 
-// Returns TRUE for the Android boot mode: set in the settings, or Volume Up
-// or Home held. A charger boot shows BIOS's charging screen instead.
+// Returns TRUE to start Android: the Boot order says so, or Volume Up or
+// Home is held. A charger boot shows BIOS's charging screen instead.
 BOOLEAN
 BootDecisionAndroid (
   IN CONST BOOT_DECISION_START *Start,
   IN BOOLEAN                    AndroidSetting
-);
-
-BOOLEAN
-BootDecisionAltBoot (
-  IN CONST BOOT_DECISION_START *Start,
-  IN BOOLEAN                    AltSetting
 );
 
 // Returns TRUE to boot Android's recovery instead of its normal boot. In the
@@ -66,7 +60,8 @@ BootDecisionRecovery (
   IN BOOLEAN                    AndroidSetting
 );
 
-// Boot sources: which drives the loader may look at, and in what order.
+// Boot sources: the drives PortareOS starts from, internal storage first,
+// then the SD card. USB drives aren't booted.
 
 typedef struct _BOOT_SOURCE_MEDIUM {
   // Removable media, or on a USB or SD path.
@@ -89,31 +84,10 @@ BootSourceMediumNode (
 BOOLEAN
 BootSourceMediumInternal (IN BOOT_SOURCE_MEDIUM Medium);
 
-// Internal only applies once Linux is installed internally. Otherwise it
-// means the SD card.
-BOOT_SOURCE
-BootSourceEffective (
-  IN BOOT_SOURCE Source,
-  IN BOOLEAN     CfwOnInternal
-);
-
-// Returns TRUE if a drive may be booted from or scanned. AltVolumeBoot means
-// the alternative Volume Up boot was held, which allows any external drive.
-BOOLEAN
-BootSourceAllows (
-  IN BOOT_SOURCE        Source,
-  IN BOOLEAN            AltVolumeBoot,
-  IN BOOT_SOURCE_MEDIUM Medium
-);
-
-// Fills Order (room for Count) with the indices of the drives that
-// BootSourceAllows accepts and returns how many. Source is the stored
-// setting. In Auto, without the Volume Up override, internal drives go first.
+// Fills Order (room for Count) with the indices of the drives to try,
+// internal ones first and no USB drive, and returns how many.
 UINTN
 BootSourceSelect (
-  IN BOOT_SOURCE               Source,
-  IN BOOLEAN                   CfwOnInternal,
-  IN BOOLEAN                   AltVolumeBoot,
   IN CONST BOOT_SOURCE_MEDIUM *Media,
   IN UINTN                     Count,
   OUT UINTN                   *Order

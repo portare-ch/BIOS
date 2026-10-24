@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
-  BootImage - Android boot images and kernel command line additions.
+  BootImage - finds and starts PortareOS's boot image (Efi/BootImage.h).
 */
 
 #include "Efi/BootImage.h"
@@ -18,47 +20,39 @@
 #include "Core/AndroidImage.h"
 #include "Core/DeviceTree.h"
 #include "Core/EfiData.h"
-#include "Core/KernelCmdLine.h"
 #include "Efi/Abl.h"
-#include "Efi/DisplayHandover.h"
 #include "Efi/Files.h"
 #include "Efi/Handover.h"
-#include "Efi/Models.h"
-#include "Efi/Qcom.h"
 #include "Efi/Quirks.h"
-#include "Efi/Splash.h"
-#include "Efi/UsbHost.h"
 
 // sizeof (boot_img_hdr) for a version 0 header.
 #define HEADER 1632
 #define PAGE   4096
 
-#define N_BOOT_IMAGES (sizeof (gModelsBootImages) / sizeof (*gModelsBootImages))
-
 #define STATUS_STR(Status) StatusText ((Status), (CHAR8[STATUS_TEXT_SIZE]){0})
 
-STATIC VOID __attribute__ ((format (
-  printf,
-  2,
-  3
-)))
-HostLog (
-  IN CONST DEFAULT_FILES_HOST *Host,
-  IN CONST CHAR8              *Format,
-  ...
-)
-{
-  OABL_STRING Line = {0};
-  va_list     Args;
+#define SAY(Log, ...) LogPrint ((Log), "boot image: " __VA_ARGS__)
 
-  StringAppend (&Line, "boot image: ");
-  va_start (Args, Format);
-  StringVPrint (&Line, Format, Args);
-  va_end (Args);
-  if (!Line.Failed) {
-    Host->Log (Host->Ctx, StringGet (&Line));
-  }
-  StringFree (&Line);
+// Names the partition a boot image was loaded from, as PARTUUID=<guid>, so
+// PortareOS's initramfs mounts that installation: an SD card written from
+// an image and an install made from it carry the same labels.
+#define BOOT_PART_KEY "portare.bootpart=PARTUUID="
+
+BOOLEAN
+BootImageIsOn (IN EFI_HANDLE Fs)
+{
+  OABL_BUFFER Head = {0};
+  BOOLEAN     Ok;
+
+  Ok = FilesReadPart (
+         Fs, BOOT_IMAGE_PATH, 0, sizeof (ANDROID_BOOT_MAGIC) - 1, &Head
+       ) &&
+       Head.Len >= sizeof (ANDROID_BOOT_MAGIC) - 1 &&
+       CompareMem (
+         Head.Data, ANDROID_BOOT_MAGIC, sizeof (ANDROID_BOOT_MAGIC) - 1
+       ) == 0;
+  BufferFree (&Head);
+  return Ok;
 }
 
 // Allocates zeroed pool for Size bytes, rounded up to whole pages.
@@ -85,20 +79,19 @@ IsBootImage (
   return Size >= HEADER && CompareMem (Buffer, ANDROID_BOOT_MAGIC, 8) == 0;
 }
 
-// Reads Path straight off FAT32 into pool. Returns NULL unless it is a boot
-// image of Want bytes (any size if Want is MAX_UINTN).
+// Reads the boot image straight off FAT32 into pool. Returns NULL unless it
+// is a boot image of Want bytes (any size if Want is MAX_UINTN).
 STATIC UINT8 *
 ReadRaw (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  IN UINTN        Want,
-  OUT UINTN      *Size
+  IN EFI_HANDLE Fs,
+  IN UINTN      Want,
+  OUT UINTN    *Size
 )
 {
   OABL_BUFFER Data  = {0};
   UINT8      *Image = NULL;
 
-  if (!RawFatReadRange (Fs, Path, 0, MAX_UINTN, &Data)) {
+  if (!RawFatReadRange (Fs, BOOT_IMAGE_PATH, 0, MAX_UINTN, &Data)) {
     BufferFree (&Data);
     return NULL;
   }
@@ -111,31 +104,25 @@ ReadRaw (
   return Image;
 }
 
-// Reads the first of gModelsBootImages on Fs that is an Android boot image
-// through the file system.
+// Reads the boot image on Fs through the file system.
 STATIC UINT8 *
 FromFileSystem (
-  IN EFI_HANDLE                Fs,
-  IN CONST DEFAULT_FILES_HOST *Host,
-  OUT UINTN                   *Size
+  IN EFI_HANDLE Fs,
+  IN LOG_SINK   Log,
+  OUT UINTN    *Size
 )
 {
-  CONST CHAR8 *Path = NULL;
+  CONST CHAR8 *Path = BOOT_IMAGE_PATH;
   UINT64       Bytes;
   UINT8       *Image;
   UINT8       *RawImage;
   UINTN        Got;
 
-  for (UINTN Index = 0; Index < N_BOOT_IMAGES && !Path; Index++) {
-    if (ModelsIsBootImage (Fs, gModelsBootImages[Index])) {
-      Path = gModelsBootImages[Index];
-    }
-  }
-  if (!Path || !FilesSize (Fs, Path, &Bytes)) {
+  if (!BootImageIsOn (Fs) || !FilesSize (Fs, Path, &Bytes)) {
     return NULL;
   }
   if (Bytes < HEADER || Bytes > MAX_UINT32) {
-    HostLog (Host, "%s: %llu bytes, not a boot image", Path, (UINT64)Bytes);
+    SAY (Log, "%s: %llu bytes, not a boot image", Path, (UINT64)Bytes);
     return NULL;
   }
   if (!(Image = Pool ((UINTN)Bytes))) {
@@ -144,21 +131,19 @@ FromFileSystem (
   if (!FilesReadTo (Fs, Path, Image, (UINTN)Bytes, &Got) || Got != Bytes) {
     // XBL's FAT driver came up short. Try reading FAT32 directly.
     gBS->FreePool (Image);
-    HostLog (
-      Host, "%s: the read came up short, trying straight off FAT32", Path
-    );
-    RawImage = ReadRaw (Fs, Path, (UINTN)Bytes, Size);
+    SAY (Log, "%s: the read came up short, trying straight off FAT32", Path);
+    RawImage = ReadRaw (Fs, (UINTN)Bytes, Size);
     if (!RawImage) {
-      HostLog (Host, "%s: no luck straight off FAT32 either", Path);
+      SAY (Log, "%s: no luck straight off FAT32 either", Path);
     }
     return RawImage;
   }
   if (CompareMem (Image, ANDROID_BOOT_MAGIC, 8) != 0) {
     gBS->FreePool (Image);
-    HostLog (Host, "%s: not an Android boot image", Path);
+    SAY (Log, "%s: not an Android boot image", Path);
     return NULL;
   }
-  HostLog (Host, "%s: %llu bytes", Path, (UINT64)Bytes);
+  SAY (Log, "%s: %llu bytes", Path, (UINT64)Bytes);
   *Size = (UINTN)Bytes;
   return Image;
 }
@@ -171,8 +156,7 @@ FoundOn (
   IN UINTN      Size
 )
 {
-  BOOT_IMAGE_FOUND Found = {
-    .Buffer = Image, .Size = Size, .Usb = VolumesMedium (Drive).Usb};
+  BOOT_IMAGE_FOUND Found = {.Buffer = Image, .Size = Size};
   OABL_BUFFER Path = {0};
 
   if (PathsHandlePath (Drive, &Path)) {
@@ -184,34 +168,30 @@ FoundOn (
 
 BOOLEAN
 BootImageFind (
-  IN CONST EFI_HANDLE         *Drives,
-  IN UINTN                     Count,
-  IN CONST DEFAULT_FILES_HOST *Host,
-  OUT BOOT_IMAGE_FOUND        *Out
+  IN CONST EFI_HANDLE  *Drives,
+  IN UINTN              Count,
+  IN LOG_SINK           Log,
+  OUT BOOT_IMAGE_FOUND *Out
 )
 {
   UINT8 *Image;
   UINTN  Size;
 
   for (UINTN Index = 0; Index < Count; Index++) {
-    if ((Image = FromFileSystem (Drives[Index], Host, &Size))) {
+    if ((Image = FromFileSystem (Drives[Index], Log, &Size))) {
       *Out = FoundOn (Drives[Index], Image, Size);
       return TRUE;
     }
   }
   // XBL's FAT driver may not see the file at all.
   for (UINTN Index = 0; Index < Count; Index++) {
-    for (UINTN Index2 = 0; Index2 < N_BOOT_IMAGES; Index2++) {
-      if ((Image = ReadRaw (
-             Drives[Index], gModelsBootImages[Index2], MAX_UINTN, &Size
-           ))) {
-        HostLog (
-          Host, "%s: found straight off FAT32, %llu bytes",
-          gModelsBootImages[Index2], (UINT64)Size
-        );
-        *Out = FoundOn (Drives[Index], Image, Size);
-        return TRUE;
-      }
+    if ((Image = ReadRaw (Drives[Index], MAX_UINTN, &Size))) {
+      SAY (
+        Log, "%s: found straight off FAT32, %llu bytes", BOOT_IMAGE_PATH,
+        (UINT64)Size
+      );
+      *Out = FoundOn (Drives[Index], Image, Size);
+      return TRUE;
     }
   }
   return FALSE;
@@ -235,8 +215,6 @@ STATIC EFI_GUID mQcomTokenSpace = {
   0x9646,
   0x435f,
   {0x8d, 0xe5, 0xf2, 0x08, 0xff, 0x80, 0xc1, 0xbd}};
-
-#define SAY(Log, ...) LogPrint ((Log), "boot image: " __VA_ARGS__)
 
 STATIC UINT64
 RoundUp (
@@ -288,13 +266,12 @@ KernelRegion (
   return QcomU64 (L"KernelBaseAddr", Base) && QcomU64 (L"KernelSize", Size);
 }
 
-// Copies Model's devicetree out of the Size bytes of DTBs at Dtbs into Out,
-// padded. Returns "" on success, else the reason.
+// Copies the Nova's devicetree (BOOT_IMAGE_MODEL) out of the Size bytes of
+// DTBs at Dtbs into Out, padded. Returns "" on success, else the reason.
 STATIC CONST CHAR8 *
-ModelDtb (
+NovaDtb (
   IN CONST UINT8  *Dtbs,
   IN UINTN         Size,
-  IN CONST CHAR8  *Model,
   OUT OABL_BUFFER *Out
 )
 {
@@ -311,7 +288,7 @@ ModelDtb (
         )) {
       continue;
     }
-    if (AsciiStrEq (Info.Model, Model)) {
+    if (AsciiStrEq (Info.Model, BOOT_IMAGE_MODEL)) {
       Blob     = Dtbs + Found.Items[Index].Offset;
       BlobSize = Found.Items[Index].Size;
     }
@@ -319,7 +296,7 @@ ModelDtb (
   }
   VecFree (&Found);
   if (!Blob) {
-    return "no devicetree for the selected model in it";
+    return "no devicetree for the " BOOT_IMAGE_MODEL " in it";
   }
   if (!UefiPaddedDtb (Blob, BlobSize, DTB_PAD, Out)) {
     return "its devicetree doesn't parse";
@@ -332,7 +309,6 @@ STATIC CONST CHAR8 *
 LayOut (
   IN CONST MENU_HOST        *Host,
   IN CONST BOOT_IMAGE_FOUND *Found,
-  IN CONST CHAR8            *Model,
   IN LOG_SINK                Log
 )
 {
@@ -437,11 +413,11 @@ LayOut (
     return "the kernel's runtime size reaches the devicetree";
   }
 
-  // Pick the model's devicetree from those appended to the kernel.
+  // Pick the Nova's devicetree from those appended to the kernel.
   if (Appended > KernelSize) {
     Appended = KernelSize;
   }
-  Why = ModelDtb (Kernel + Appended, KernelSize - Appended, Model, &Dtb);
+  Why = NovaDtb (Kernel + Appended, KernelSize - Appended, &Dtb);
   if (*Why) {
     BufferFree (&Dtb);
     return Why;
@@ -450,9 +426,9 @@ LayOut (
     BufferFree (&Dtb);
     return "its devicetree is larger than 2 MiB";
   }
-  QuirksFixupDeviceTree (Dtb.Data, Dtb.Len, Found->Usb, Log);
+  QuirksFixupDeviceTree (Dtb.Data, Dtb.Len, Log);
 
-  // The image's command line, unless a command-line file changes it.
+  // The image's command line, then where it came from.
   BaseCmdline       = BootImage + CMDLINE_AT;
   BaseCmdlineLength = Found->Size >= CMDLINE_END ? CMDLINE_END - CMDLINE_AT : 0;
   {
@@ -465,14 +441,14 @@ LayOut (
                           ? Length
                           : (BaseCmdlineLength < 511 ? BaseCmdlineLength : 511);
   }
-  Ok = CmdLineGet (BaseCmdline, BaseCmdlineLength, Log, &Cmdline);
-  if (!Ok) {
-    BufferFree (&Cmdline);
-    Ok = BufferFrom (&Cmdline, BaseCmdline, BaseCmdlineLength);
-  }
-  // Even after a command-line file: it says where the kernel came from.
+  Ok = BufferFrom (&Cmdline, BaseCmdline, BaseCmdlineLength);
   if (Ok && Found->PartUuid[0]) {
-    Ok = KernelCmdLineAppendBootPart (&Cmdline, Found->PartUuid);
+    Ok = (!Cmdline.Len || Cmdline.Data[Cmdline.Len - 1] == ' ' ||
+          BufferAppendU8 (&Cmdline, ' ')) &&
+         BufferAppend (&Cmdline, BOOT_PART_KEY, sizeof (BOOT_PART_KEY) - 1) &&
+         BufferAppend (
+           &Cmdline, Found->PartUuid, AsciiStrLen (Found->PartUuid)
+         );
     SAY (Log, "booted from partition %s", Found->PartUuid);
   }
   if (!Ok || !BufferAppendU8 (&Cmdline, 0)) {
@@ -485,20 +461,14 @@ LayOut (
   CopyMem ((VOID *)(UINTN)RamdiskAddr, Ramdisk, RamdiskSize);
   SAY (
     Log,
-    "kernel %llu bytes at 0x%llx, devicetree for \"%s\" at 0x%llx, ramdisk "
-    "%llu bytes at 0x%llx, command "
-    "line %llu bytes",
-    (UINT64)Written, (UINT64)KernelAddr, Model, (UINT64)DtbAddr,
+    "kernel %llu bytes at 0x%llx, devicetree at 0x%llx, ramdisk %llu bytes "
+    "at 0x%llx, command line %llu bytes",
+    (UINT64)Written, (UINT64)KernelAddr, (UINT64)DtbAddr,
     (UINT64)RamdiskSize, (UINT64)RamdiskAddr, (UINT64)(Cmdline.Len - 1)
   );
 
-  // Hand USB back to the OS and stop the hypervisor logging to the UART the
-  // kernel takes over. A splash region in the tree keeps the display on.
-  if (Found->Usb) {
-    UsbHostOsHandoff ();
-  }
+  // Stop the hypervisor logging to the UART the kernel takes over.
   HandoverHypUartOff ();
-  DisplayHandoverKeepSplash (SplashHasRegion (Dtb.Data, Dtb.Len));
   Layout = (OPENABL_KERNEL){
     .KernelAddr  = KernelAddr,
     .KernelSize  = RoundUp (ImageSize != 0 ? ImageSize : Written, Page),
@@ -514,154 +484,34 @@ LayOut (
   return "not started";
 }
 
-BOOT_IMAGE_NOT_STARTED
+VOID
 BootImageStart (
   IN CONST MENU_HOST        *Host,
   IN CONST BOOT_IMAGE_FOUND *Found,
-  IN CONST CHAR8            *Model OPTIONAL,
-  IN LOG_SINK                Log,
-  OUT EFI_STATUS            *Refused OPTIONAL
+  IN LOG_SINK                Log
 )
 {
   CONST CHAR8 *Why;
   EFI_STATUS   Status;
 
-  if (!Model || !*Model) {
-    SAY (Log, "no device model selected: it needs one for its devicetree");
-    return BOOT_IMAGE_NOT_STARTED_NO_MODEL;
-  }
   Status = MenuHostAction (Host, OPENABL_MENU_ACTION_BOOT_IMAGE_VERIFY);
   if (Status != EFI_SUCCESS) {
     SAY (Log, "verified boot refused it (%s)", STATUS_STR (Status));
-    if (Refused) {
-      *Refused = Status;
-    }
-    return BOOT_IMAGE_NOT_STARTED_REFUSED;
+    return;
   }
   // Once verified, the buffer is ours again.
-  Why = LayOut (Host, Found, Model, Log);
+  Why = LayOut (Host, Found, Log);
   gBS->FreePool (Found->Buffer);
   SAY (Log, "%s", Why);
-  return BOOT_IMAGE_NOT_STARTED_FAILED;
 }
 
 EFI_STATUS
 BootImageStartVerified (
   IN CONST MENU_HOST        *Host,
   IN CONST BOOT_IMAGE_FOUND *Found,
-  IN CONST CHAR8            *Model OPTIONAL,
   IN LOG_SINK                Log
 )
 {
-  if (!Model || !*Model) {
-    SAY (Log, "no device model selected: it needs one for its devicetree");
-    return EFI_NOT_READY;
-  }
-  SAY (Log, "%s", LayOut (Host, Found, Model, Log));
+  SAY (Log, "%s", LayOut (Host, Found, Log));
   return EFI_LOAD_ERROR;
-}
-
-// Kernel command line
-
-// Largest command-line file we read.
-#define FILE_MAX ((UINTN)64 << 10)
-
-// Reads Name from the first volume that has a non-empty, readable copy.
-STATIC BOOLEAN
-FirstFile (
-  IN CONST CHAR8  *Name,
-  OUT OABL_BUFFER *Raw
-)
-{
-  EFI_HANDLE *Handles;
-  UINTN   Count = LocateHandles (&gEfiSimpleFileSystemProtocolGuid, &Handles);
-  BOOLEAN Found = FALSE;
-
-  for (UINTN Index = 0; Index < Count && !Found; Index++) {
-    OABL_BUFFER File = {0};
-    if (!FilesRead (Handles[Index], Name, FILE_MAX, &File)) {
-      continue;
-    }
-    if (File.Len) {
-      *Raw  = File;
-      Found = TRUE;
-    } else {
-      BufferFree (&File);
-    }
-  }
-  if (Handles) {
-    gBS->FreePool (Handles);
-  }
-  return Found;
-}
-
-BOOLEAN
-CmdLineGet (
-  IN CONST UINT8     *Base,
-  IN UINTN            Length,
-  IN LOG_SINK         Log,
-  IN OUT OABL_BUFFER *Out
-)
-{
-  KERNEL_CMDLINE_KIND Kind = KERNEL_CMDLINE_KIND_OVERRIDE;
-  CONST CHAR8        *Name = KERNEL_CMDLINE_OVERRIDE;
-  OABL_BUFFER         Raw  = {0};
-  OABL_BUFFER         Text = {0};
-  BOOLEAN             Ok;
-
-  if (!FirstFile (Name, &Raw)) {
-    Kind = KERNEL_CMDLINE_KIND_APPEND;
-    Name = KERNEL_CMDLINE_APPEND;
-    if (!FirstFile (Name, &Raw)) {
-      return FALSE;
-    }
-  }
-  Ok = KernelCmdLineFileText (Raw.Data, Raw.Len, &Text);
-  BufferFree (&Raw);
-  if (!Ok) {
-    return FALSE;
-  }
-  LogPrint (
-    Log, "kernel command line: %s%s",
-    Kind == KERNEL_CMDLINE_KIND_OVERRIDE ? "replaced by \\"
-                                         : "added to from \\",
-    Name
-  );
-  Ok = KernelCmdLineCombine (
-    BytesOf (Base, Length), Kind, BufferBytes (&Text), Out
-  );
-  BufferFree (&Text);
-  return Ok;
-}
-
-VOID
-CmdLineAndroidParams (
-  IN LOG_SINK         Log,
-  IN OUT OABL_BUFFER *Out
-)
-{
-  KERNEL_CMDLINE_PARAM                Params[KERNEL_CMDLINE_ANDROID_PARAMS];
-  CHAR8                              *Panel = QcomDisplayPanelConfig ();
-  EFI_PLATFORMINFO_PLATFORM_INFO_TYPE Platform;
-  QCOM_CHIP                           Chip;
-  BOOLEAN                             Sm8750;
-  UINTN                               Count;
-
-  (VOID)QcomPlatform (&Platform);
-  // Only the SM8750 stock ABL passes the display id.
-  Sm8750 = QcomChip (&Chip) && TextStartsWith (TextOf (Chip.Name), "SM8750");
-  Count  = KernelCmdLineAndroidParams (
-    Panel ? Panel : "", Platform.subtype, (UINT8)Platform.fusion, Sm8750, Params
-  );
-
-  for (UINTN Index = 0; Index < Count; Index++) {
-    LogPrint (
-      Log, "android parameter:%s%s", Params[Index].Key, Params[Index].Value
-    );
-    BufferAppend (Out, Params[Index].Key, AsciiStrLen (Params[Index].Key));
-    BufferAppendU8 (Out, 0);
-    BufferAppend (Out, Params[Index].Value, AsciiStrLen (Params[Index].Value));
-    BufferAppendU8 (Out, 0);
-  }
-  FreePool (Panel);
 }

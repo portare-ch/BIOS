@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -65,52 +67,6 @@ DisplayOpen (OUT DISPLAY *Out)
     return Status;
   }
   *Out = Opened (Gop);
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-DisplayOpenPanel (OUT DISPLAY *Out)
-{
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *First        = NULL;
-  EFI_HANDLE                   *Handles      = NULL;
-  UINT64                        RegionBase   = 0;
-  UINT64                        RegionLength = 0;
-  BOOLEAN                       Region;
-  UINTN                         Count = 0;
-  EFI_STATUS                    Status;
-
-  Status = gBS->LocateHandleBuffer (
-    ByProtocol, &gEfiGraphicsOutputProtocolGuid, NULL, &Count, &Handles
-  );
-  if (Status != EFI_SUCCESS) {
-    return Status;
-  }
-  Region = HandoverDisplayRegion (&RegionBase, &RegionLength);
-  for (UINTN Index = 0; Index < Count; Index++) {
-    UINT64 Base;
-
-    if (OpenGop (Handles[Index], &Gop) != EFI_SUCCESS) {
-      continue;
-    }
-    Base = Gop->Mode->FrameBufferBase;
-    if (Gop->Mode->Info->PixelFormat != PixelBltOnly && Region &&
-        RegionBase <= Base && Base < RegionBase + RegionLength) {
-      gBS->FreePool (Handles);
-      *Out = Opened (Gop);
-      return EFI_SUCCESS;
-    }
-    if (!First) {
-      First = Gop;
-    }
-  }
-  if (Handles) {
-    gBS->FreePool (Handles);
-  }
-  if (!First) {
-    return EFI_NOT_FOUND;
-  }
-  *Out = Opened (First);
   return EFI_SUCCESS;
 }
 

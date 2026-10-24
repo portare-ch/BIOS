@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -14,50 +16,15 @@
 
 #include "Base/OablBase.h"
 
-// The stored values of the Language setting. Add new ones at the end.
-typedef enum { LANG_EN, LANG_COUNT } LANG_ID;
-
 typedef struct _LANG_STRINGS {
   CONST CHAR8 *SectionSystem;
   CONST CHAR8 *Boot;
   CONST CHAR8 *Edl;
   CONST CHAR8 *Internal;
   CONST CHAR8 *SdCard;
-  CONST CHAR8 *On;
-  CONST CHAR8 *Off;
-  CONST CHAR8 *DeviceModel;
-  CONST CHAR8 *NotSet;
-  CONST CHAR8 *ToastTargetExited;
-  CONST CHAR8 *ToastFirmwareDt;
-  CONST CHAR8 *ToastModelSet;
   CONST CHAR8 *SrcInternal;
   CONST CHAR8 *SrcSd;
-  CONST CHAR8 *Countdown;
-  CONST CHAR8 *AnyKeyToStay;
-  CONST CHAR8 *InfoRam;
-  CONST CHAR8 *InfoStorage;
-  CONST CHAR8 *InfoDisplay;
-  CONST CHAR8 *InfoModel;
-  CONST CHAR8 *InfoPanel;
-  CONST CHAR8 *DeviceInfo;
-  CONST CHAR8 *Log;
-  CONST CHAR8 *SectionDebug;
-  CONST CHAR8 *DbgUsbLive;
-  CONST CHAR8 *DbgQuiesce;
-  CONST CHAR8 *DbgPanelLines;
-  CONST CHAR8 *InfoChip;
-  CONST CHAR8 *InfoPlatform;
-  CONST CHAR8 *InfoPmic;
-  CONST CHAR8 *InfoStorageChip;
-  CONST CHAR8 *InfoAndroid;
-  CONST CHAR8 *InfoBootloader;
-  CONST CHAR8 *InfoUefi;
-  CONST CHAR8 *Current;
-  CONST CHAR8 *FirmwareDefault;
   CONST CHAR8 *Back;
-  CONST CHAR8 *NoTriesLeft;
-  CONST CHAR8 *LookingForDts;
-  CONST CHAR8 *FewSeconds;
   CONST CHAR8 *Starting;
   CONST CHAR8 *ErrNoImageTitle;
   CONST CHAR8 *ErrNoImageMsg;
@@ -71,27 +38,17 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *ErrAndroidFailedTitle;
   CONST CHAR8 *ErrAndroidFailedMsg;
   CONST CHAR8 *ErrAndroidFailedHint;
-  CONST CHAR8 *ErrModelTitle;
-  CONST CHAR8 *ErrModelMsg;
   CONST CHAR8 *ConfirmEdlTitle;
   CONST CHAR8 *ConfirmEdlMsg;
   CONST CHAR8 *ConfirmEdl;
   CONST CHAR8 *Cancel;
   CONST CHAR8 *AblSettingFailed;
-  CONST CHAR8 *AblModelFailed;
-  CONST CHAR8 *AblNotAnswering;
   CONST CHAR8 *AblRestartFailed;
   CONST CHAR8 *TargetNotKept;
-  CONST CHAR8 *RestartingToScan;
-  CONST CHAR8 *RestartToScanFailed;
-  CONST CHAR8 *ModelScanFailed;
   CONST CHAR8 *AblActionFailed;
   CONST CHAR8 *PowerOffFailed;
   CONST CHAR8 *DontTurnOff;
   CONST CHAR8 *InstallNoMemory;
-  CONST CHAR8 *Unknown;
-  CONST CHAR8 *NotInserted;
-  CONST CHAR8 *SrcAblScan;
   // BIOS
   CONST CHAR8 *SectionStart;
   CONST CHAR8 *SectionStorage;
@@ -160,8 +117,6 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *InstallChangedHint;
   CONST CHAR8 *KeyPower;
   CONST CHAR8 *KeyVolume;
-  CONST CHAR8 *KeyEnter;
-  CONST CHAR8 *KeyArrows;
   CONST CHAR8 *VerbLaunch;
   CONST CHAR8 *VerbChange;
   CONST CHAR8 *VerbSelect;
@@ -169,19 +124,10 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *VerbMove;
 } LANG_STRINGS;
 
-// Strings in the current language, English until LangSet.
 extern CONST LANG_STRINGS *gStrings;
 
-// Switches the strings to Lang. An unknown Lang is English.
-VOID
-LangSet (IN UINT8 Lang);
-
-// Returns Lang's name, in Lang.
-CONST CHAR8 *
-LangName (IN UINT8 Lang);
-
 // Writes Template to Out with Args filled in. {} takes the next argument
-// and {0} or {1} a given one, so word order can differ between languages.
+// and {0} or {1} a given one.
 // Placeholders past ArgCount are left empty.
 VOID
 LangFill (

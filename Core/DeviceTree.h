@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -60,19 +62,6 @@ typedef enum {
   DT_NO_SPACE,
 } DT_ERROR;
 
-// Sets property Name on the first node compatible with one of Compatibles,
-// tried in order. Also returns DT_NOT_FOUND if the header can't be read.
-DT_ERROR
-DtSetPropByCompatible (
-  IN OUT UINT8          *Fdt,
-  IN UINTN               Capacity,
-  IN CONST CHAR8 *CONST *Compatibles,
-  IN UINTN               Count,
-  IN CONST CHAR8        *Name,
-  IN CONST VOID         *Value,
-  IN UINTN               Length
-);
-
 // Finds the node at Path with fdt_path_offset. A component without a unit
 // address matches a node with one: /reserved-memory/cont_splash_region finds
 // cont_splash_region@9c000000.
@@ -84,57 +73,8 @@ DtNodeAtPath (
   OUT UINTN      *Node
 );
 
-// Name points into the blob.
-BOOLEAN
-DtNodeName (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN UINTN        Node,
-  OUT OABL_BYTES *Name
-);
-
-// Value points into the blob.
-BOOLEAN
-DtPropAt (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN UINTN        Node,
-  IN CONST CHAR8 *Name,
-  OUT OABL_BYTES *Value
-);
-
 typedef struct _DT_NODES
 OABL_VEC (UINTN) DT_NODES;
-
-// Adds an empty subnode after Parent's properties and before its subnodes.
-// Returns DT_BAD_BLOB if Parent already has a subnode of that name.
-DT_ERROR
-DtAddSubnode (
-  IN OUT UINT8   *Fdt,
-  IN UINTN        Capacity,
-  IN UINTN        Parent,
-  IN CONST CHAR8 *Name,
-  OUT UINTN      *Node
-);
-
-// Returns TRUE if /chosen has a subnode whose name starts with Prefix. It
-// doesn't allocate, so it can be called at ExitBootServices.
-BOOLEAN
-DtChosenHas (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN CONST CHAR8 *Prefix
-);
-
-// Lists the direct subnodes of Node. On failure, Out keeps those found so
-// far.
-BOOLEAN
-DtNodeChildren (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN UINTN        Node,
-  OUT DT_NODES   *Out
-);
 
 // Adds a no-map Prefix@BASE node to /reserved-memory, creating it if
 // needed, unless a region there already covers the range. This keeps the

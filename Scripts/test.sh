@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
+# Copyright (C) 2026-present PortareOS
+#   https://portare.org
 #
 # Runs `make test` in a Debian container with the tools it checks against:
 # Docker if it's running, else Apple's container. The images are written

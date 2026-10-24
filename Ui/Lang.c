@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -9,9 +11,6 @@
 
 #include "Ui/Lang.h"
 #include "Base/Text.h"
-#include "Core/Settings.h"
-
-_Static_assert (LANG_COUNT == SETTINGS_LANGUAGES, "languages");
 
 STATIC CONST LANG_STRINGS mEn = {
   .SectionSystem     = "System",
@@ -19,41 +18,9 @@ STATIC CONST LANG_STRINGS mEn = {
   .Edl               = "Emergency download mode",
   .Internal = "Internal storage",
   .SdCard            = "SD card",
-  .On                = "On",
-  .Off               = "Off",
-  .DeviceModel       = "Device model",
-  .NotSet            = "Not set",
-  .ToastTargetExited = "Returned to the boot menu.",
-  .ToastFirmwareDt = "Using the firmware default.",
-  .ToastModelSet = "Device model set to {}.",
   .SrcInternal       = "internal storage",
   .SrcSd             = "the SD card",
-  .Countdown         = "Starting {0} in {1} s",
-  .AnyKeyToStay      = "Any key to stay",
-  .InfoRam           = "RAM",
-  .InfoStorage = "Internal storage",
-  .InfoDisplay       = "Display",
-  .InfoModel = "Device model",
-  .InfoPanel         = "Panel",
-  .DeviceInfo = "Device information",
-  .Log = "Boot log",
-  .SectionDebug      = "Debug",
-  .DbgUsbLive = "USB host without restart",
-  .DbgQuiesce = "Stop display before boot",
-  .DbgPanelLines = "Panel power off before boot",
-  .InfoChip          = "Chip",
-  .InfoPlatform      = "Platform",
-  .InfoPmic          = "PMIC",
-  .InfoStorageChip   = "Storage chip",
-  .InfoAndroid       = "Android build",
-  .InfoBootloader    = "Bootloader",
-  .InfoUefi          = "UEFI firmware",
-  .Current           = "Current",
-  .FirmwareDefault   = "Firmware default",
   .Back              = "Back",
-  .NoTriesLeft = "No boot attempts left",
-  .LookingForDts = "Looking for device models",
-  .FewSeconds     = "This can take a few seconds.",
   .Starting        = "Starting...",
   .ErrNoImageTitle = "Couldn't start PortareOS",
   .ErrNoImageMsg = "No usable PortareOS installation was found.",
@@ -67,27 +34,17 @@ STATIC CONST LANG_STRINGS mEn = {
   .ErrAndroidFailedTitle = "Couldn't start Android",
   .ErrAndroidFailedMsg = "Android didn't start from internal storage.",
   .ErrAndroidFailedHint = "Its partitions may be damaged. Choose another system under Boot.",
-  .ErrModelTitle = "Device model isn't set",
-  .ErrModelMsg = "Linux needs your device model to start. Choose it on the next screen.",
   .ConfirmEdlTitle       = "Enter emergency download mode?",
   .ConfirmEdlMsg = "The screen stays off in this mode. It's for Qualcomm flashing tools on a computer.",
   .ConfirmEdl    = "Enter EDL",
   .Cancel        = "Cancel",
   .AblSettingFailed = "Couldn't save the setting.",
-  .AblModelFailed = "Couldn't save the device model.",
-  .AblNotAnswering = "Couldn't read the current settings.",
   .AblRestartFailed = "Couldn't restart ({}).",
   .TargetNotKept = "Couldn't save the boot choice ({}).",
-  .RestartingToScan = "Restarting to find device models.",
-  .RestartToScanFailed = "Couldn't restart to find device models.",
-  .ModelScanFailed = "Couldn't scan for device models.",
   .AblActionFailed = "Couldn't complete the request.",
   .PowerOffFailed = "Couldn't shut down.",
   .DontTurnOff         = "Don't turn off the Nova.",
   .InstallNoMemory = "Not enough memory to finish ({}).",
-  .Unknown             = "Unknown",
-  .NotInserted         = "Not inserted",
-  .SrcAblScan = "the storage scan",
   // BIOS
   .SectionStart = "Start",
   .SectionStorage = "Storage",
@@ -156,8 +113,6 @@ STATIC CONST LANG_STRINGS mEn = {
   .InstallChangedHint = "PortareOS isn't installed. Try again.",
   .KeyPower = "POWER",
   .KeyVolume = "VOL+/-",
-  .KeyEnter = "ENTER",
-  .KeyArrows = "UP/DOWN",
   .VerbLaunch = "START",
   .VerbChange = "CHANGE",
   .VerbSelect = "SELECT",
@@ -165,28 +120,7 @@ STATIC CONST LANG_STRINGS mEn = {
   .VerbMove = "MOVE",
 };
 
-STATIC CONST LANG_STRINGS *CONST mLangs[LANG_COUNT] = {
-  [LANG_EN] = &mEn,
-};
-
-// Each language's name in itself, for the Language setting.
-STATIC CONST CHAR8 *CONST mNames[LANG_COUNT] = {
-  [LANG_EN] = "English",
-};
-
 CONST LANG_STRINGS *gStrings = &mEn;
-
-VOID
-LangSet (IN UINT8 Lang)
-{
-  gStrings = mLangs[Lang < LANG_COUNT ? Lang : LANG_EN];
-}
-
-CONST CHAR8 *
-LangName (IN UINT8 Lang)
-{
-  return mNames[Lang < LANG_COUNT ? Lang : LANG_EN];
-}
 
 VOID
 LangFill (

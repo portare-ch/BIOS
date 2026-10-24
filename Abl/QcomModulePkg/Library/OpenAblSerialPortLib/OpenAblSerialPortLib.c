@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-source-exception */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /* The ABL's debug output, for the menu program's Log screen. Output from

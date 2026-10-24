@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright (C) 2026-present Open Handheld Collective
  *   https://github.com/OpenHandheldCollective
+ * Copyright (C) 2026-present PortareOS
+ *   https://portare.org
  */
 
 /**
@@ -26,11 +28,6 @@ typedef struct _DISPLAY {
 // the panel's native resolution, and changing it isn't supported.
 EFI_STATUS
 DisplayOpen (OUT DISPLAY *Out);
-
-// Opens the graphics output whose framebuffer is in XBL's display region,
-// or else the first one that opens. Returns EFI_NOT_FOUND if none opens.
-EFI_STATUS
-DisplayOpenPanel (OUT DISPLAY *Out);
 
 STATIC inline VOID
 DisplaySize (
