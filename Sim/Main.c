@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <zlib.h>
 
 #include "Base/Text.h"
@@ -902,6 +903,8 @@ main (
       return 2;
     }
   }
+  // Its parent must exist; an existing folder is fine.
+  mkdir (Out, 0777);
   if (DoCheck) {
     for (UINTN Session = 0;
          Session < sizeof (mSessions) / sizeof (mSessions[0]); Session++) {
