@@ -618,19 +618,6 @@ QuirksAblLog (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   return (LOG_SINK){AblLogSink, (VOID *)(UINTN)Log};
 }
 
-// Only AYANEO's and KONKR's panels need androidboot ids, so there are none.
-STATIC EFI_STATUS EFIAPI
-PAndroidParams (
-  IN OPENABL_STORAGE_PROTOCOL *This,
-  OUT CHAR8                   *Out OPTIONAL,
-  IN OUT UINTN                *Size,
-  IN OPENABL_STORAGE_LOG       Log OPTIONAL
-)
-{
-  (VOID)This, (VOID)Out, (VOID)Size, (VOID)Log;
-  return EFI_NOT_FOUND;
-}
-
 VOID
 QuirksFixupDeviceTree (
   IN OUT UINT8 *Fdt,
@@ -700,7 +687,6 @@ QuirksInstallProtocol (VOID)
   if (!Protocol) {
     return EFI_OUT_OF_RESOURCES;
   }
-  Protocol->AndroidParams  = PAndroidParams;
   Protocol->BootPrep       = PBootPrep;
   Protocol->Run            = mRunFn;
   Protocol->StartBootImage = PStartBootImage;

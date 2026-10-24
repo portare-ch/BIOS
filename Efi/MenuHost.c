@@ -23,16 +23,10 @@ MenuHostActionName (IN UINT32 Action)
   switch (Action) {
   case OPENABL_MENU_ACTION_START:
     return "START";
-  case OPENABL_MENU_ACTION_RESTART_BOOTLOADER:
-    return "RESTART_BOOTLOADER";
-  case OPENABL_MENU_ACTION_RECOVERY:
-    return "RECOVERY";
   case OPENABL_MENU_ACTION_EMERGENCY:
     return "EMERGENCY";
   case OPENABL_MENU_ACTION_POWER_OFF:
     return "POWER_OFF";
-  case OPENABL_MENU_ACTION_ALTERNATE_SLOT:
-    return "ALTERNATE_SLOT";
   case OPENABL_MENU_ACTION_FASTBOOT_START:
     return "FASTBOOT_START";
   case OPENABL_MENU_ACTION_FASTBOOT_STOP:
@@ -45,18 +39,10 @@ MenuHostActionName (IN UINT32 Action)
     return "BOOT_ANDROID";
   case OPENABL_MENU_ACTION_BOOT_ANDROID_RECOVERY:
     return "BOOT_ANDROID_RECOVERY";
-  case OPENABL_MENU_ACTION_GADGET_PAUSE:
-    return "GADGET_PAUSE";
-  case OPENABL_MENU_ACTION_GADGET_RESUME:
-    return "GADGET_RESUME";
   case OPENABL_MENU_ACTION_BOOT_IMAGE_VERIFY:
     return "BOOT_IMAGE_VERIFY";
   case OPENABL_MENU_ACTION_CHARGER_BOOT:
     return "CHARGER_BOOT";
-  case OPENABL_MENU_ACTION_CHARGER_SCREEN_ON:
-    return "CHARGER_SCREEN_ON";
-  case OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF:
-    return "CHARGER_SCREEN_OFF";
   }
   return "?";
 }
@@ -95,7 +81,6 @@ MenuHostState (
     return Status;
   }
   Out->OffmodeCharging = Abl.OffmodeCharging;
-  Out->Flags           = Abl.Flags;
   Out->Entry           = Abl.Entry;
   Out->Key             = Abl.Key;
   CopyMem (Out->Version, Abl.Version, sizeof (Out->Version));

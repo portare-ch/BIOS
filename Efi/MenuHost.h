@@ -50,7 +50,6 @@ MenuHostActionName (IN UINT32 Action);
 // The ABL's state, and the settings the menu decides from it.
 typedef struct _MENU_HOST_STATE {
   UINT8  OffmodeCharging; // Qualcomm's charger screen flag
-  UINT8  Flags;           // OPENABL_MENU_STATE_*
   UINT8  Entry;           // OPENABL_MENU_ENTRY_*
   UINT16 Key;             // the key held at the start, a SCAN_* code
   CHAR8  Version[32];     // the ABL's version

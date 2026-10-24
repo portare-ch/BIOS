@@ -31,8 +31,5 @@ OpenAblStartBootImage (IN VOID *Buffer, IN UINTN Size);
 EFI_STATUS
 OpenAblPvmFwRegister (BootInfo *Info);
 
-BOOLEAN
-OpenAblAndroidParam (IN UINTN Index, OUT CONST CHAR8 **Key,
-                     OUT CONST CHAR8 **Value);
 
 #endif /* __OPENABL_MENU_H__ */

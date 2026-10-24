@@ -82,24 +82,12 @@ CopyText (CHAR8 *Dst, UINTN DstSize, CONST CHAR8 *Src)
 STATIC EFI_STATUS EFIAPI
 HostGetState (IN OPENABL_MENU_HOST_PROTOCOL *This, OUT OPENABL_MENU_STATE *State)
 {
-  UINT8 Flags = 0;
-
   if (State == NULL) {
     return EFI_INVALID_PARAMETER;
   }
   ZeroMem (State, sizeof (*State));
   State->OffmodeCharging = IsChargingScreenEnable () ? 1 : 0;
 
-#if ABL_USB_HOST
-  Flags |= OPENABL_MENU_STATE_USB_HOST;
-#endif
-  if (FixedPcdGetBool (EnableForceBootAlternateSlot) && IsSlotsUbootable ()) {
-    Flags |= OPENABL_MENU_STATE_ALTERNATE_SLOT;
-  }
-  if (IsVmEnabled ()) {
-    Flags |= OPENABL_MENU_STATE_VM_ENABLED;
-  }
-  State->Flags = Flags;
   State->Entry = mMainRun ? mEntry : 0;
   State->Key = mMainRun ? mKey : SCAN_NULL;
   CopyText (State->Version, sizeof (State->Version), PRODUCT_VERSION);
@@ -144,23 +132,12 @@ HostDoAction (IN OPENABL_MENU_HOST_PROTOCOL *This, IN UINT32 Action)
   case OPENABL_MENU_ACTION_START:
     RebootDevice (NORMAL_MODE);
     return EFI_DEVICE_ERROR; /* the reset failed */
-  case OPENABL_MENU_ACTION_RESTART_BOOTLOADER:
-    RebootDevice (FASTBOOT_MODE);
-    return EFI_DEVICE_ERROR;
-  case OPENABL_MENU_ACTION_RECOVERY:
-    RebootDevice (RECOVERY_MODE);
-    return EFI_DEVICE_ERROR;
   case OPENABL_MENU_ACTION_EMERGENCY:
     RebootDevice (EMERGENCY_DLOAD);
     return EFI_DEVICE_ERROR;
   case OPENABL_MENU_ACTION_POWER_OFF:
     ShutdownDevice ();
     return EFI_DEVICE_ERROR;
-  case OPENABL_MENU_ACTION_ALTERNATE_SLOT:
-    if (!FixedPcdGetBool (EnableForceBootAlternateSlot) || !IsSlotsUbootable ()) {
-      return EFI_UNSUPPORTED;
-    }
-    return HandleActiveSlotUnbootable (TRUE);
   default:
     break;
   }
@@ -202,15 +179,6 @@ HostDoAction (IN OPENABL_MENU_HOST_PROTOCOL *This, IN UINT32 Action)
     TargetPauseForBatteryCharge (&Charger);
     return Charger ? EFI_SUCCESS : EFI_NOT_FOUND;
   }
-  case OPENABL_MENU_ACTION_CHARGER_SCREEN_ON:
-  case OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF:
-    return EnableChargingScreen (Action ==
-                                 OPENABL_MENU_ACTION_CHARGER_SCREEN_ON);
-  case OPENABL_MENU_ACTION_GADGET_PAUSE:
-  case OPENABL_MENU_ACTION_GADGET_RESUME:
-    return !mFastbootUp
-             ? EFI_UNSUPPORTED
-             : FastbootGadget (Action == OPENABL_MENU_ACTION_GADGET_RESUME);
   default:
     return EFI_UNSUPPORTED;
   }
@@ -525,43 +493,6 @@ LoadedProgram (VOID)
     return NULL;
   }
   return Program;
-}
-
-BOOLEAN
-OpenAblAndroidParam (IN UINTN Index, OUT CONST CHAR8 **Key,
-                     OUT CONST CHAR8 **Value)
-{
-  /* Fetched once. Holds "key\0value\0" pairs and a final NUL, then zeros. */
-  STATIC CHAR8   Params[256];
-  STATIC BOOLEAN Asked;
-  OPENABL_STORAGE_PROTOCOL *Storage;
-  CONST CHAR8              *P;
-
-  if (!Asked) {
-    UINTN Size = sizeof (Params) - 2;
-
-    Asked = TRUE;
-    Storage = LoadedProgram ();
-    if ((Storage == NULL) ||
-        EFI_ERROR (Storage->AndroidParams (Storage, Params, &Size,
-                                           StorageLog))) {
-      Params[0] = '\0';
-    }
-  }
-  for (P = Params; *P != '\0';) {
-    CONST CHAR8 *K = P;
-    CONST CHAR8 *V;
-
-    P += AsciiStrLen (P) + 1;
-    V = P;
-    P += AsciiStrLen (P) + 1;
-    if (Index-- == 0) {
-      *Key = K;
-      *Value = V;
-      return TRUE;
-    }
-  }
-  return FALSE;
 }
 
 EFI_STATUS
