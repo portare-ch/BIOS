@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
+# Copyright (C) 2026-present PortareOS
+#   https://portare.org
 
 # Builds openabl-menu.efi, the program the ABL embeds, with clang and lld-link.
 # build.sh runs this in its container; to run it directly, fetch the sources

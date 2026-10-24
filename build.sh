@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
+# Copyright (C) 2026-present PortareOS
+#   https://portare.org
 # Builds the ABL with the menu program for the Retroid Pocket Nova's
 # chipset, SM8550 (`all` means the same):
 #

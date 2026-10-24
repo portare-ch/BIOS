@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
+# Copyright (C) 2026-present PortareOS
+#   https://portare.org
 # Fetches the build's sources into build/, each at a pinned commit:
 #
 #   Scripts/fetch.sh [edk2] [qtestsign]   (default: both)

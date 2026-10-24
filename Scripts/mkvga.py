@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present PortareOS
-#   https://github.com/portare-ch
+#   https://portare.org
 """Makes View/Vga.c: mkvga.py Assets/Bm437_IBM_VGA_8x16.otb > View/Vga.c
 
 Reads the 8x16 bitmap strike of the IBM VGA font from The Ultimate Oldschool
