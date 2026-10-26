@@ -99,7 +99,7 @@ ShowToast (
   A->Dirty      = TRUE;
 }
 
-// Starts Target: PortareOS, Android, or the first of the boot order. Shows
+// Starts Target: Linux, Android, or the first of the boot order. Shows
 // the error screen instead when Android can't be booted here.
 STATIC COMMAND
 BeginBoot (
@@ -109,7 +109,7 @@ BeginBoot (
 {
   if (Target == BOOT_TARGET_ORDER) {
     Target = A->BootMode == BOOT_MODE_ANDROID ? BOOT_TARGET_ANDROID
-                                              : BOOT_TARGET_PORTAREOS;
+                                              : BOOT_TARGET_LINUX;
   }
   A->Starting = Target;
   A->Dirty    = TRUE;
@@ -433,7 +433,7 @@ AppItemView (
     AsciiStrCopy (
       Value, Cap,
       A->BootMode == BOOT_MODE_ANDROID ? gStrings->OrderAndroidFirst
-                                       : gStrings->OrderPortareOsFirst
+                                       : gStrings->OrderLinuxFirst
     );
     break;
   case ITEM_INSTALL:

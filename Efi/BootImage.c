@@ -6,7 +6,7 @@
  */
 
 /**
-  BootImage - finds and starts PortareOS's boot image (Efi/BootImage.h).
+  BootImage - finds and starts Linux boot images (Efi/BootImage.h).
 */
 
 #include "Efi/BootImage.h"
@@ -33,26 +33,35 @@
 
 #define SAY(Log, ...) LogPrint ((Log), "boot image: " __VA_ARGS__)
 
-// Names the partition a boot image was loaded from, as PARTUUID=<guid>, so
-// PortareOS's initramfs mounts that installation: an SD card written from
-// an image and an install made from it carry the same labels.
-#define BOOT_PART_KEY "portare.bootpart=PARTUUID="
-
 BOOLEAN
 BootImageIsOn (IN EFI_HANDLE Fs)
 {
   OABL_BUFFER Head = {0};
   BOOLEAN     Ok;
 
-  Ok = FilesReadPart (
-         Fs, BOOT_IMAGE_PATH, 0, sizeof (ANDROID_BOOT_MAGIC) - 1, &Head
-       ) &&
+  Ok = (FilesReadPart (
+          Fs, BOOT_IMAGE_PATH, 0, sizeof (ANDROID_BOOT_MAGIC) - 1, &Head
+        ) ||
+        RawFatReadRange (
+          Fs, BOOT_IMAGE_PATH, 0, sizeof (ANDROID_BOOT_MAGIC) - 1, &Head
+        )) &&
        Head.Len >= sizeof (ANDROID_BOOT_MAGIC) - 1 &&
        CompareMem (
          Head.Data, ANDROID_BOOT_MAGIC, sizeof (ANDROID_BOOT_MAGIC) - 1
        ) == 0;
   BufferFree (&Head);
   return Ok;
+}
+
+LINUX_DISTRO
+BootImageDistroOn (IN EFI_HANDLE Fs)
+{
+  CHAR8       *Label = FilesVolumeLabel (Fs);
+  LINUX_DISTRO Distro =
+    LinuxDistroOf (Label, FilesExists (Fs, "\\.armada-bootimg.id"));
+
+  FreePool (Label);
+  return Distro;
 }
 
 // Allocates zeroed pool for Size bytes, rounded up to whole pages.
@@ -156,7 +165,8 @@ FoundOn (
   IN UINTN      Size
 )
 {
-  BOOT_IMAGE_FOUND Found = {.Buffer = Image, .Size = Size};
+  BOOT_IMAGE_FOUND Found = {
+    .Buffer = Image, .Size = Size, .Distro = BootImageDistroOn (Drive)};
   OABL_BUFFER Path = {0};
 
   if (PathsHandlePath (Drive, &Path)) {
@@ -205,11 +215,6 @@ BootImageFind (
 #define DT_SIZE ((UINT64)2 << 20)
 // Padding for our devicetree fix-ups. The ABL's own update grows it further.
 #define DTB_PAD 8192
-// boot_img_hdr.cmdline: BOOT_ARGS_SIZE bytes at offset 64. It is the only
-// command line BootLinux takes from a v0-v2 image.
-#define CMDLINE_AT  64
-#define CMDLINE_END 576
-
 STATIC EFI_GUID mQcomTokenSpace = {
   0x882f8c2b,
   0x9646,
@@ -306,25 +311,24 @@ NovaDtb (
 
 // Lays out the image and starts it. Returns the reason if it fails.
 STATIC CONST CHAR8 *
-LayOut (
-  IN CONST MENU_HOST        *Host,
-  IN CONST BOOT_IMAGE_FOUND *Found,
-  IN LOG_SINK                Log
+LayOutParsed (
+  IN CONST MENU_HOST          *Host,
+  IN CONST BOOT_IMAGE_FOUND   *Found,
+  IN CONST ANDROID_BOOT_IMAGE *Header,
+  IN LOG_SINK                  Log
 )
 {
   CONST UINT8       *BootImage = Found->Buffer;
-  ANDROID_BOOT_IMAGE Header;
   ANDROID_SECTION    KernelSection;
   ANDROID_SECTION    RamdiskSection;
   OABL_BUFFER        Dtb     = {0};
   OABL_BUFFER        Cmdline = {0};
-  CONST UINT8       *Kernel, *Ramdisk, *Image, *BaseCmdline;
+  CONST UINT8       *Kernel, *Ramdisk, *Image;
   UINTN              KernelSize;
   UINTN              RamdiskSize;
   UINTN              Written;
   UINTN              Appended;
   UINTN              Room;
-  UINTN              BaseCmdlineLength;
   UINT64             Page;
   UINT64             RegionBase;
   UINT64             RegionSize;
@@ -342,14 +346,10 @@ LayOut (
   OPENABL_KERNEL     Layout;
   EFI_STATUS         Status;
 
-  if (!AndroidBootImageParse (BootImage, Found->Size, &Header)) {
-    return "not an Android boot image";
-  }
-  Version        = Header.HeaderVersion;
-  Page           = Header.PageSize;
-  KernelSection  = Header.Kernel;
-  RamdiskSection = Header.Ramdisk;
-  AndroidBootImageFree (&Header);
+  Version        = Header->HeaderVersion;
+  Page           = Header->PageSize;
+  KernelSection  = Header->Kernel;
+  RamdiskSection = Header->Ramdisk;
   if (Version >= 3) {
     return "a header v3 or later image needs vendor_boot: not started";
   }
@@ -428,30 +428,15 @@ LayOut (
   }
   QuirksFixupDeviceTree (Dtb.Data, Dtb.Len, Log);
 
-  // The image's command line, then where it came from.
-  BaseCmdline       = BootImage + CMDLINE_AT;
-  BaseCmdlineLength = Found->Size >= CMDLINE_END ? CMDLINE_END - CMDLINE_AT : 0;
-  {
-    UINTN Length = 0;
-
-    while (Length < BaseCmdlineLength && BaseCmdline[Length]) {
-      Length++;
-    }
-    BaseCmdlineLength = Length < BaseCmdlineLength
-                          ? Length
-                          : (BaseCmdlineLength < 511 ? BaseCmdlineLength : 511);
-  }
-  Ok = BufferFrom (&Cmdline, BaseCmdline, BaseCmdlineLength);
-  if (Ok && Found->PartUuid[0]) {
-    Ok = (!Cmdline.Len || Cmdline.Data[Cmdline.Len - 1] == ' ' ||
-          BufferAppendU8 (&Cmdline, ' ')) &&
-         BufferAppend (&Cmdline, BOOT_PART_KEY, sizeof (BOOT_PART_KEY) - 1) &&
-         BufferAppend (
-           &Cmdline, Found->PartUuid, AsciiStrLen (Found->PartUuid)
-         );
+  // Keep the full command line, including extra_cmdline. Armada's ostree
+  // root and ROCKNIX's boot/disk arguments belong to those installations.
+  Ok = LinuxBootCmdline (
+    Found->Distro, Header->Cmdline, Found->PartUuid, &Cmdline
+  );
+  if (Found->PartUuid[0]) {
     SAY (Log, "booted from partition %s", Found->PartUuid);
   }
-  if (!Ok || !BufferAppendU8 (&Cmdline, 0)) {
+  if (!Ok) {
     BufferFree (&Cmdline);
     BufferFree (&Dtb);
     return "out of memory for the command line";
@@ -482,6 +467,24 @@ LayOut (
   BufferFree (&Cmdline);
   BufferFree (&Dtb);
   return "not started";
+}
+
+STATIC CONST CHAR8 *
+LayOut (
+  IN CONST MENU_HOST        *Host,
+  IN CONST BOOT_IMAGE_FOUND *Found,
+  IN LOG_SINK                Log
+)
+{
+  ANDROID_BOOT_IMAGE Header;
+  CONST CHAR8       *Why;
+
+  if (!AndroidBootImageParse (Found->Buffer, Found->Size, &Header)) {
+    return "not an Android boot image";
+  }
+  Why = LayOutParsed (Host, Found, &Header, Log);
+  AndroidBootImageFree (&Header);
+  return Why;
 }
 
 VOID

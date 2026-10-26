@@ -244,10 +244,9 @@ TargetName (
 {
   if (Target == BOOT_TARGET_ORDER) {
     Target = A->BootMode == BOOT_MODE_ANDROID ? BOOT_TARGET_ANDROID
-                                              : BOOT_TARGET_PORTAREOS;
+                                              : BOOT_TARGET_LINUX;
   }
-  return Target == BOOT_TARGET_ANDROID ? gStrings->Android
-                                       : gStrings->PortareOs;
+  return Target == BOOT_TARGET_ANDROID ? gStrings->Android : gStrings->Linux;
 }
 
 // The sections and their items, and under a rule a note: a toast, or what

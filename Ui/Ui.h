@@ -35,7 +35,7 @@ typedef enum {
 // the boot order.
 typedef enum {
   BOOT_TARGET_ORDER,
-  BOOT_TARGET_PORTAREOS,
+  BOOT_TARGET_LINUX,
   BOOT_TARGET_ANDROID,
 } BOOT_TARGET;
 

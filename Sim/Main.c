@@ -232,6 +232,44 @@ SBootListSd (
   AppInput (A, INPUT_DOWN);
 }
 
+// Existing installations of the other supported Linux systems.
+STATIC VOID
+SBootListLinux (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  STATIC CONST ENTRY_VIEW Entries[] = {
+    {.Title = "ArmadaOS", .Kind = ENTRY_KIND_BOOT_IMAGE},
+    {.Title = "ROCKNIX", .Kind = ENTRY_KIND_BOOT_IMAGE, .Removable = TRUE},
+    {.Title = "Android", .Kind = ENTRY_KIND_ANDROID},
+  };
+
+  AppSetEntries (A, Entries, sizeof (Entries) / sizeof (*Entries));
+  SBootList (A, Now);
+}
+
+STATIC VOID
+SBootingArmada (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SBootListLinux (A, Now);
+  AppInput (A, INPUT_SELECT);
+}
+
+STATIC VOID
+SBootingRocknix (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SBootListLinux (A, Now);
+  AppInput (A, INPUT_DOWN);
+  AppInput (A, INPUT_SELECT);
+}
+
 STATIC VOID
 SBooting (
   IN OUT APP *A,
@@ -510,6 +548,7 @@ STATIC CONST struct {
   {"menu-boot-order", SBootOrder},
   {"boot-list", SBootList},
   {"boot-list-sd", SBootListSd},
+  {"boot-list-linux", SBootListLinux},
   {"confirm-edl", SConfirmEdl},
   {"install", SInstall},
   {"install-replace", SInstallReplace},
@@ -529,6 +568,8 @@ STATIC CONST struct {
   {"booting", SBooting},
   {"booting-sd", SBootingSd},
   {"booting-android", SBootingAndroid},
+  {"booting-armada", SBootingArmada},
+  {"booting-rocknix", SBootingRocknix},
   {"error-no-image", SErrorNoImage},
   {"error-load", SErrorLoad},
   {"error-pick-gone", SErrorPickGone},

@@ -53,11 +53,12 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *SectionStart;
   CONST CHAR8 *SectionStorage;
   CONST CHAR8 *PortareOs;
+  CONST CHAR8 *Linux;
   CONST CHAR8 *Android;
   CONST CHAR8 *BootOrder;
   CONST CHAR8 *Restart;
   CONST CHAR8 *ShutDown;
-  CONST CHAR8 *OrderPortareOsFirst;
+  CONST CHAR8 *OrderLinuxFirst;
   CONST CHAR8 *OrderAndroidFirst;
   CONST CHAR8 *HelpBoot;
   CONST CHAR8 *FromInternal;

@@ -84,7 +84,7 @@ typedef struct _MENU_STATE {
   MENU_HOST Host;
   BOOT_MODE BootMode;
   BOOLEAN   Android;
-  // Why the last start of PortareOS didn't boot (MENU_START_RESULT_*).
+  // Why the last Linux start didn't boot (MENU_START_RESULT_*).
   UINT8 CameBack;
   // The ABL's version, for the header.
   CHAR8 AblVersion[64];
@@ -156,16 +156,11 @@ Act (
 STATIC VOLUMES_HANDLE_LIST mDrives;
 STATIC EFI_HANDLE          mEntryDrive[MAX_ENTRIES];
 
-// The name a drive's boot image has in the boot list: PortareOS on its
-// own boot partition, else Linux.
+// The name of the installation whose KERNEL this drive holds.
 STATIC CONST CHAR8 *
 BootImageTitle (IN EFI_HANDLE Fs)
 {
-  CHAR8  *Label     = FilesVolumeLabel (Fs);
-  BOOLEAN PortareOs = Label && AsciiStrEq (Label, "PORTAREOS");
-
-  FreePool (Label);
-  return PortareOs ? gStrings->PortareOs : "Linux";
+  return LinuxDistroName (BootImageDistroOn (Fs));
 }
 
 // Fills the boot list: each drive's boot image, internal storage first,
@@ -277,7 +272,7 @@ CameBackShown (
 
 // Commands
 
-// Keeps PortareOS or Android for the next boot only (MENU_ONCE_VAR), so the
+// Keeps Linux or Android for the next boot only (MENU_ONCE_VAR), so the
 // restart starts it whatever the Boot order says.
 STATIC EFI_STATUS
 KeepTarget (IN BOOLEAN Linux)
@@ -287,7 +282,7 @@ KeepTarget (IN BOOLEAN Linux)
 
   MenuFlush ();
   MenuLog (
-    "next boot: %s (%s)", Linux ? "PortareOS" : "Android", MENU_STATUS (Status)
+    "next boot: %s (%s)", Linux ? "Linux" : "Android", MENU_STATUS (Status)
   );
   return Status;
 }
@@ -376,9 +371,9 @@ RunCommand (
   case COMMAND_BOOT_ENTRY: {
     BOOT_TARGET Target    = (BOOT_TARGET)Command.Arg;
     BOOLEAN     ModeLinux = M->BootMode == BOOT_MODE_LINUX;
-    // Boot list entries other than Android's are PortareOS's.
+    // Every boot-list entry other than Android's uses the Linux path.
     BOOLEAN      Linux = Command.Kind == COMMAND_BOOT_ENTRY ||
-                         Target == BOOT_TARGET_PORTAREOS ||
+                         Target == BOOT_TARGET_LINUX ||
                          (Target == BOOT_TARGET_ORDER && ModeLinux);
     EFI_STATUS   Status;
     CONST CHAR8 *Failed = gStrings->AblRestartFailed;

@@ -87,9 +87,10 @@ $(OBJ)/sim-$(VARIANT)/%.o: %.c
 
 -include $(SIM_OBJS:.o=.d)
 
-# Host test of the installer's formatters, against the real tools.
+# Host tests of Linux boot selection and the installer's formatters.
 TEST_SRCS := $(sort $(shell find Base -name '*.c')) Host/Host.c Core/Fat32.c \
-	Core/Fat32Make.c Core/Ext4Make.c Core/Gpt.c Core/Vbmeta.c $(wildcard Tests/*.c)
+	Core/Fat32Make.c Core/Ext4Make.c Core/Gpt.c Core/Vbmeta.c Core/LinuxBoot.c \
+	Ui/App.c Ui/Lang.c $(wildcard Tests/*.c)
 TEST_OBJS := $(patsubst %.c,$(OBJ)/test/%.o,$(TEST_SRCS))
 TEST_DIR  ?= build/test/images
 

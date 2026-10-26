@@ -1,8 +1,8 @@
 # Portare BIOS
 
-Portare BIOS is the BIOS for PortareOS on the Retroid Pocket Nova. It boots
-PortareOS and Android, and installs PortareOS from an SD card to internal
-storage.
+Portare BIOS is the BIOS for the Retroid Pocket Nova. It boots PortareOS,
+ArmadaOS, ROCKNIX and Android, and installs PortareOS from an SD card to
+internal storage.
 
 <p>
   <img alt="The main menu" src="Docs/main-menu.png" width="49%">
@@ -30,7 +30,7 @@ Hold a volume key while powering on to change how the Nova starts:
 
 | Held | What happens |
 |---|---|
-| Nothing | Boots the default system (PortareOS initially). A failed start opens the menu. |
+| Nothing | Boots the default system (Linux initially). A failed start opens the menu. |
 | Volume Down | Opens the BIOS menu, with fastboot available over USB. |
 | Volume Up | Boots Android, or Android recovery if Android is the default. |
 
@@ -38,8 +38,22 @@ Hold a volume key while powering on to change how the Nova starts:
 
 In the menu, use Volume Up and Down to move and Power to select.
 **Boot** chooses a system for this boot; **Boot order** changes the default
-when Android is installed. PortareOS boots from internal storage first,
-then the SD card; the boot list lets you choose either installation.
+when Android is installed. **Linux first** tries internal storage, then
+the SD card; the boot list lets you choose an individual installation.
+PortareOS, ArmadaOS and ROCKNIX appear by name with their storage location.
+
+Linux installations need a FAT boot volume with `KERNEL`, an Android boot
+image (header v0 to v2) containing the Nova's device tree. The BIOS keeps
+the image's full command line, including ArmadaOS's root and OSTree
+arguments and ROCKNIX's `boot=` and `disk=` arguments. Boot volumes labelled
+`PORTAREOS`, `ARMADA` and `ROCKNIX` are recognized; older ArmadaOS volumes
+labelled `ROCKNIX` are identified by their `.armada-bootimg.id` stamp.
+Other bootable `KERNEL` volumes appear as **Linux**.
+
+Support covers existing SD-card and internal installations using this
+layout. Images that use only BLS entries or EFI loaders need a compatible
+`KERNEL` image. Use each distribution's installer for ArmadaOS or ROCKNIX;
+the BIOS installer installs PortareOS.
 
 Enable the charging screen with `fastboot oem off-mode-charge 1` (`0`
 disables it). On that screen, Power boots the default system, a volume key

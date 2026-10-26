@@ -160,7 +160,7 @@ BootPick (
                                                         : PICK_FAILED;
 }
 
-// Starts PortareOS: the boot list's pick, or else the first boot image on
+// Starts Linux: the boot list's pick, or else the first boot image on
 // internal storage, then the SD card, through Qualcomm's verified boot.
 // Returns only if nothing started, with a MENU_START_RESULT_* reason.
 STATIC UINT8

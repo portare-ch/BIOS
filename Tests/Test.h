@@ -31,4 +31,8 @@ extern INT32 gTestFailures;
 INT32
 GptTests (VOID);
 
+// Linux identification, command lines and boot-list selection.
+VOID
+LinuxBootTests (VOID);
+
 #endif

@@ -6,8 +6,8 @@
  */
 
 /**
-  BootImage - finds and starts PortareOS's boot image, an Android boot image
-  (header v0 to v2) at \KERNEL on its boot partition.
+  BootImage - finds and starts Linux boot images for PortareOS, ArmadaOS
+  and ROCKNIX: Android boot images (header v0 to v2) at \KERNEL.
 
   The image is read into page-rounded, zeroed pool memory. After a
   successful SetBootImage the ABL owns it; otherwise the caller frees it
@@ -24,6 +24,7 @@
 #include "Efi/Efi.h"
 
 #include "Core/EfiData.h"
+#include "Core/LinuxBoot.h"
 #include "Efi/MenuHost.h"
 #include "Efi/Log.h"
 
@@ -36,6 +37,7 @@
 typedef struct _BOOT_IMAGE_FOUND {
   UINT8 *Buffer;
   UINTN  Size;
+  LINUX_DISTRO Distro;
   // The GPT partition it was found on, for the kernel's portare.bootpart,
   // or "".
   CHAR8 PartUuid[UEFI_PART_UUID_SIZE];
@@ -45,6 +47,10 @@ typedef struct _BOOT_IMAGE_FOUND {
 // Android boot image magic.
 BOOLEAN
 BootImageIsOn (IN EFI_HANDLE Fs);
+
+// Identifies the installation by its volume label and Armada boot stamp.
+LINUX_DISTRO
+BootImageDistroOn (IN EFI_HANDLE Fs);
 
 // Finds the first of Drives with a boot image, in order. If XBL's FAT
 // driver can't read or can't see the file, it is read straight off FAT32.
@@ -68,7 +74,7 @@ BootImageStart (
 );
 
 // Like BootImageStart, for an image that is already verified (fastboot's
-// boot command while PortareOS starts first). The buffer stays the
+// boot command while Linux starts first). The buffer stays the
 // caller's. Returns EFI_LOAD_ERROR, only on failure.
 EFI_STATUS
 BootImageStartVerified (

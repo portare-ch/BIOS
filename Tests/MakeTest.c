@@ -6,7 +6,8 @@
  */
 
 /**
-  MakeTest - runs GptTests and checks Replace Android's vbmeta, then
+  MakeTest - runs boot-selection and GPT tests and checks Replace Android's
+  vbmeta, then
   writes images with Fat32Make and Ext4Make for Tests/check.sh, which
   checks them with fsck.fat, mtools, e2fsck and debugfs.
 
@@ -385,6 +386,7 @@ main (
     return 2;
   }
   GptTests ();
+  LinuxBootTests ();
   VbmetaHeader ();
   FatRefusals ();
   FatImage (Argv[1], "fat-4k", 2ull << 30, 4096);
