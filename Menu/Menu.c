@@ -30,10 +30,6 @@
 #include "Ui/Ui.h"
 #include "View/View.h"
 
-// The Nova's portrait panel (960 x 1280) is mounted sideways: the picture
-// turns this far clockwise.
-#define NOVA_ROTATION 90
-
 // Variables
 
 BOOLEAN
@@ -685,7 +681,6 @@ MenuRun (
   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
   // Ignore a key still held from opening the menu.
   InputKeysHeldAtStart (&Keys);
-  ViewRotate (NOVA_ROTATION);
   mApp.Dirty = TRUE;
 
   for (;;) {

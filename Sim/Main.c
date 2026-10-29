@@ -7,7 +7,7 @@
 
 /**
   Main - renders the menu's screens to PNG on the host, on the Nova's
-  960 x 1280 panel turned 90 degrees.
+  native 1280 x 960 landscape panel.
 
     openabl-menu-sim [--out DIR] [--filter TEXT] [--check]
 
@@ -29,10 +29,9 @@
 #include "Ui/Ui.h"
 #include "View/View.h"
 
-// The Nova's panel, and how far the menu turns its picture.
-#define PANEL_W  960
-#define PANEL_H  1280
-#define ROTATION 90
+// The Nova's native landscape mode, also used by PortareOS.
+#define PANEL_W 1280
+#define PANEL_H 960
 
 STATIC UINT32  mClockMs;
 STATIC UINT32 *mLogical, *mPhysical;
@@ -608,7 +607,6 @@ Render (
     fprintf (stderr, "the view didn't start\n");
     exit (1);
   }
-  ViewRotate (ROTATION);
   UINT32 LogicalW;
   UINT32 LogicalH;
   ViewLogicalSize (&LogicalW, &LogicalH);
@@ -837,7 +835,6 @@ FreshCheck (
     fprintf (stderr, "the view didn't start again\n");
     exit (1);
   }
-  ViewRotate (ROTATION);
   ViewSync (&mApp);
   ViewSettle ();
   ViewRedraw (TRUE);
@@ -871,7 +868,6 @@ Check (
     fprintf (stderr, "the view didn't start\n");
     exit (1);
   }
-  ViewRotate (ROTATION);
   mApp.Dirty = TRUE;
   for (UINTN Index = 0; Index < mSessions[Session].Count; Index++) {
     CONST STEP *Step = &mSessions[Session].Steps[Index];
