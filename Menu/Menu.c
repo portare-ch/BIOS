@@ -657,6 +657,8 @@ MenuRun (
   AppTick (&mApp, ClockNowMs ());
   if (M.CameBack == MENU_START_RESULT_CHARGING) {
     MenuLog ("charging: powered on by the charger");
+    Status = BatteryStartCharging ();
+    MenuLog ("charging: enable (%s)", MENU_STATUS (Status));
     AppStartCharging (&mApp);
     mBatteryAt = 0;
     mAwakeAt   = ClockNowMs ();
