@@ -35,4 +35,8 @@ GptTests (VOID);
 VOID
 LinuxBootTests (VOID);
 
+// Charging-screen percentage and missing voltage updates.
+VOID
+BatteryTests (VOID);
+
 #endif

@@ -314,15 +314,17 @@ AppOnBattery (
   IN UINT32   MilliVolts
 )
 {
-  UINT32 Before = AppBatteryLevel (A) / 10;
+  UINT32  Before = AppBatteryLevel (A);
+  BOOLEAN HadVoltage = A->BatteryMv != 0;
 
-  if (Known != A->BatteryKnown || Charger != A->Charger) {
+  if (Known != A->BatteryKnown || Charger != A->Charger ||
+      HadVoltage != (MilliVolts != 0)) {
     A->Dirty = TRUE;
   }
   A->BatteryKnown = Known;
   A->Charger      = Charger;
   A->BatteryMv    = MilliVolts;
-  if (AppBatteryLevel (A) / 10 != Before) {
+  if (AppBatteryLevel (A) != Before) {
     A->Dirty = TRUE;
   }
 }
