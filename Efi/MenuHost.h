@@ -37,8 +37,9 @@
 #define MENU_START_RESULT_PICK_GONE 6u
 // What the boot list picked didn't start, so nothing else was tried.
 #define MENU_START_RESULT_PICK_FAILED 7u
-// Not a failure: the charger powered the device on, so the menu shows its
-// charging screen.
+// Not a failure: the charger powered the device on and Android, whose
+// charger mode would charge it, isn't installed or didn't start. The menu
+// shows its charging screen.
 #define MENU_START_RESULT_CHARGING 8u
 // Android's start came back.
 #define MENU_START_RESULT_ANDROID_FAILED 0x80u

@@ -42,6 +42,12 @@ MenuLog (
     2
   )));
 
+// Whether Android is installed: gone only once Replace Android removed it,
+// and assumed there when internal storage can't be read. Connects the
+// storage first.
+BOOLEAN
+MenuAndroidThere (VOID);
+
 // MenuLog as a LOG_SINK, for the Efi modules' log lines.
 extern CONST LOG_SINK gMenuEfiLog;
 

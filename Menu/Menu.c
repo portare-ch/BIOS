@@ -62,11 +62,8 @@ MenuFlush (VOID)
   }
 }
 
-// Whether Android is installed: gone only once Replace Android removed it,
-// and assumed there when internal storage can't be read. Connects the
-// storage first.
-STATIC BOOLEAN
-AndroidThere (VOID)
+BOOLEAN
+MenuAndroidThere (VOID)
 {
   GPT_SURVEY Internal;
 
@@ -104,7 +101,7 @@ MenuNew (
   *M = (MENU_STATE){
     .Host     = *Host,
     .BootMode = VariablesAndroidFirst () ? BOOT_MODE_ANDROID : BOOT_MODE_LINUX,
-    .Android  = AndroidThere (),
+    .Android  = MenuAndroidThere (),
     .CameBack = CameBack,
   };
   Version = MenuHostText (State.Version, sizeof (State.Version));
