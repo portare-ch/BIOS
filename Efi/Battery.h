@@ -28,6 +28,17 @@ typedef struct _BATTERY_STATE {
 EFI_STATUS
 BatteryStartCharging (VOID);
 
+#ifdef CHARGING_DIAG
+// The diagnostic build's two lines about the firmware: QcomCharger's
+// revision and its answer to the charging request (Enable), and ChargerEx's
+// revision with what it says of the battery and of off-mode charging.
+VOID
+BatteryDescribe (
+  IN EFI_STATUS Enable,
+  OUT CHAR8     Lines[2][48]
+);
+#endif
+
 // FALSE where XBL has no charger protocol or can't tell if a charger is in.
 BOOLEAN
 BatteryRead (OUT BATTERY_STATE *Out);

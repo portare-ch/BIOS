@@ -32,6 +32,11 @@ EDK2     ?= build/edk2
 OUT      ?= build/menu
 
 DEFINES := -DMENU_VERSION=\"$(VERSION)\"
+# `make DIAG=1`: the charging screen also shows what the firmware answered
+# and the battery's voltage over time (a test build, not a release).
+ifeq ($(DIAG),1)
+DEFINES += -DCHARGING_DIAG
+endif
 VARIANT := $(shell echo '$(DEFINES)' | cksum | cut -d' ' -f1)
 
 DIRS := Base Ui View Core Efi Menu Rt

@@ -26,6 +26,8 @@ IMAGE=ghcr.io/tianocore/containers/fedora-40-dev:latest
 WORKSPACE=/workspaces/LinuxLoader
 CHIPSETS="sm8550"
 
+# DIAG=1 ./build.sh ...: the charging screen with its diagnostic lines (a
+# test build, not a release; the Makefile's DIAG).
 usage() {
   echo "usage: ./build.sh <sm8550|all> [--clean]" >&2
   echo "chipsets: $CHIPSETS" >&2
@@ -108,7 +110,7 @@ for soc in "${ASKED[@]}"; do
   params=("${COMMON[@]}" "PVMFW_ENABLED=$PVMFW" "DISABLE_KERNEL_PROTOCOL=$((1 - KERNEL_PROTOCOL))")
   quoted=$(printf " '%s'" "${params[@]}")
   SCRIPT+="echo \"Building the program for $soc\"
-make -s -C /openabl OBJ=build/obj-abl OUT=build/menu/$soc || { echo \"ERROR: the program didn't build for $soc.\"; exit 1; }
+make -s -C /openabl OBJ=build/obj-abl OUT=build/menu/$soc DIAG=${DIAG:-0} || { echo \"ERROR: the program didn't build for $soc.\"; exit 1; }
 build $soc /openabl/build/menu/$soc/openabl-menu.efi $SIGN$quoted || exit 1
 "
 done

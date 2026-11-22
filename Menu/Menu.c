@@ -660,6 +660,9 @@ MenuRun (
     Status = BatteryStartCharging ();
     MenuLog ("charging: enable (%s)", MENU_STATUS (Status));
     AppStartCharging (&mApp);
+#ifdef CHARGING_DIAG
+    BatteryDescribe (Status, mApp.ChargeFirmware);
+#endif
     mBatteryAt = 0;
     mAwakeAt   = ClockNowMs ();
     mUnplugged = 0;
