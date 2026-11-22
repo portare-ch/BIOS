@@ -324,6 +324,29 @@ AppOnBattery (
   A->BatteryKnown = Known;
   A->Charger      = Charger;
   A->BatteryMv    = MilliVolts;
+#ifdef CHARGING_DIAG
+  if (MilliVolts != 0) {
+    if (A->ChargeStartMv == 0) {
+      A->ChargeStartMs = A->Now;
+      A->ChargeStartMv = MilliVolts;
+      A->ChargeMinMv   = MilliVolts;
+      A->ChargeMaxMv   = MilliVolts;
+    }
+    if (MilliVolts < A->ChargeMinMv) {
+      A->ChargeMinMv = MilliVolts;
+    }
+    if (MilliVolts > A->ChargeMaxMv) {
+      A->ChargeMaxMv = MilliVolts;
+    }
+    if (A->ChargeSampleCount < CHARGE_SAMPLES &&
+        A->Now - A->ChargeStartMs >=
+          (UINT64)(A->ChargeSampleCount + 1) * CHARGE_SAMPLE_MS) {
+      A->ChargeSamples[A->ChargeSampleCount++] = MilliVolts;
+    }
+  }
+  // Every reading is shown.
+  A->Dirty = TRUE;
+#endif
   if (AppBatteryLevel (A) != Before) {
     A->Dirty = TRUE;
   }

@@ -842,6 +842,39 @@ ChargingDraw (IN CONST APP *A)
       Y + BATTERY_ROWS + 3, Percent, ATTR_BRIGHT
     );
   }
+#ifdef CHARGING_DIAG
+  {
+    CHAR8  Line[5][96];
+    UINT32 Minutes = (UINT32)((A->Now - A->ChargeStartMs) / 60000);
+    INT32  At;
+
+    SPrint (
+      Line[0], sizeof (Line[0]), "DIAG %u mV charger %s %u min", A->BatteryMv,
+      !A->BatteryKnown ? "?" : A->Charger ? "in" : "out", Minutes
+    );
+    SPrint (
+      Line[1], sizeof (Line[1]), "start %u min %u max %u", A->ChargeStartMv,
+      A->ChargeMinMv, A->ChargeMaxMv
+    );
+    At = SPrint (Line[2], sizeof (Line[2]), "10 min:");
+    for (UINT32 Index = 0; Index < A->ChargeSampleCount; Index++) {
+      At += SPrint (
+        Line[2] + At, sizeof (Line[2]) - (UINTN)At, " %u",
+        A->ChargeSamples[Index]
+      );
+    }
+    SPrint (Line[3], sizeof (Line[3]), "%s", A->ChargeFirmware[0]);
+    SPrint (Line[4], sizeof (Line[4]), "%s", A->ChargeFirmware[1]);
+    for (UINT32 Index = 0; Index < 5; Index++) {
+      UINT32 Width = GridWidth (Line[Index]);
+
+      GridPuts (
+        G, G->Cols > Width ? (G->Cols - Width) / 2 : 0,
+        Y + BATTERY_ROWS + 5 + Index, Line[Index], ATTR_MID
+      );
+    }
+  }
+#endif
 }
 
 // Frames

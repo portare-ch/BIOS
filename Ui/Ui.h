@@ -175,6 +175,13 @@ typedef struct _ENTRY_VIEW {
   BOOLEAN    Removable; // on the SD card, not internal storage
 } ENTRY_VIEW;
 
+#ifdef CHARGING_DIAG
+// The diagnostic build keeps a voltage reading every ten minutes, for the
+// first eighty.
+#define CHARGE_SAMPLES   8
+#define CHARGE_SAMPLE_MS (10 * 60 * 1000)
+#endif
+
 typedef struct _APP {
   BOOT_MODE    BootMode;
   BOOLEAN      Android; // Android is installed, or may be
@@ -212,6 +219,18 @@ typedef struct _APP {
   BOOLEAN BatteryKnown;
   BOOLEAN Charger;
   UINT32  BatteryMv;
+#ifdef CHARGING_DIAG
+  // The diagnostic build's lines under the percent: what the firmware
+  // answered, and the voltage since the screen came up, with a reading
+  // kept every CHARGE_SAMPLE_MS.
+  CHAR8  ChargeFirmware[2][48];
+  UINT64 ChargeStartMs;
+  UINT32 ChargeStartMv;
+  UINT32 ChargeMinMv;
+  UINT32 ChargeMaxMv;
+  UINT32 ChargeSamples[CHARGE_SAMPLES];
+  UINT32 ChargeSampleCount;
+#endif
 
   INT32 Booting; // the entry picked from the list, or -1
 

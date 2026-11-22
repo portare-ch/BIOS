@@ -57,3 +57,42 @@ BatteryRead (OUT BATTERY_STATE *Out)
   *Out = (BATTERY_STATE){.Charger = Present, .MilliVolts = Voltage};
   return TRUE;
 }
+
+#ifdef CHARGING_DIAG
+#include "Base/Print.h"
+
+VOID
+BatteryDescribe (
+  IN EFI_STATUS Enable,
+  OUT CHAR8     Lines[2][48]
+)
+{
+  QCOM_CHARGER            *Qcom = LocateProtocol (&mQcomChargerGuid);
+  EFI_CHARGER_EX_PROTOCOL *Ex   = LocateProtocol (&gChargerExProtocolGuid);
+  BOOLEAN                  Battery = FALSE;
+  BOOLEAN                  Offmode = FALSE;
+  EFI_STATUS               BatteryStatus;
+  EFI_STATUS               OffmodeStatus;
+
+  if (Qcom) {
+    SPrint (
+      Lines[0], 48, "QcomCharger r%llx enable %llx",
+      (unsigned long long)Qcom->Revision, (unsigned long long)Enable
+    );
+  } else {
+    SPrint (Lines[0], 48, "QcomCharger none enable %llx", (unsigned long long)Enable);
+  }
+  if (!Ex) {
+    SPrint (Lines[1], 48, "ChargerEx none");
+    return;
+  }
+  BatteryStatus = Ex->GetBatteryPresence (&Battery);
+  OffmodeStatus = Ex->IsOffModeCharging (&Offmode);
+  SPrint (
+    Lines[1], 48, "ChargerEx r%llx batt %c offmode %c",
+    (unsigned long long)Ex->Revision,
+    EFI_ERROR (BatteryStatus) ? '?' : Battery ? 'y' : 'n',
+    EFI_ERROR (OffmodeStatus) ? '?' : Offmode ? 'y' : 'n'
+  );
+}
+#endif

@@ -53,7 +53,10 @@ jobs:
             echo "restored $key"
           fi
 
+      # A branch named diag/... builds the charging screen's diagnostic lines in.
       - name: Build
+        env:
+          DIAG: ${{ startsWith(github.head_ref, 'diag/') && '1' || '0' }}
         run: ./build.sh all
 
       - name: Keep the log
