@@ -42,8 +42,9 @@ BootDecisionFastboot (IN CONST BOOT_DECISION_START *Start);
 BOOLEAN
 BootDecisionUpHeld (IN CONST BOOT_DECISION_START *Start);
 
-// Returns TRUE to start Android: the Boot order says so, or Volume Up or
-// Home is held. A charger boot shows BIOS's charging screen instead.
+// Returns TRUE to start Android: the Boot order says so, Volume Up or Home
+// is held, or it is a recovery boot (BootDecisionRecovery). A charger boot
+// shows BIOS's charging screen instead.
 BOOLEAN
 BootDecisionAndroid (
   IN CONST BOOT_DECISION_START *Start,
@@ -52,8 +53,10 @@ BootDecisionAndroid (
 
 // Returns TRUE to boot Android's recovery instead of its normal boot. In the
 // Android boot mode, Qualcomm's recovery flag or Home held selects it. In
-// the Linux boot mode, Volume Up boots Android itself, and since Qualcomm's
-// flag can't tell Volume Up from its other sources, Volume Up wins.
+// the Linux boot mode, the flag selects it too (from the reboot reason or
+// misc), except with Volume Up held: Volume Up boots Android itself, and
+// since Qualcomm's flag can't tell Volume Up from its other sources, Volume
+// Up wins.
 BOOLEAN
 BootDecisionRecovery (
   IN CONST BOOT_DECISION_START *Start,

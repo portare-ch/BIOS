@@ -682,7 +682,7 @@ MenuRun (
   gST->ConOut->ClearScreen (gST->ConOut);
   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
   // Ignore a key still held from opening the menu.
-  InputKeysHeldAtStart (&Keys);
+  InputKeysHeldAtStart (&Keys, ClockNowMs ());
   mApp.Dirty = TRUE;
 
   for (;;) {
@@ -696,6 +696,10 @@ MenuRun (
       if (mDark) {
         Wake (Now);
         Events.Count = 0;
+        // Turning the display on takes a while, and the key that woke it
+        // can still be reported: without this the power key would start
+        // the system.
+        InputKeysAfterBusy (&Keys, ClockNowMs ());
       }
       mAwakeAt = Now;
     }
@@ -720,6 +724,8 @@ MenuRun (
         ViewDone ();
         return (MENU_END){MENU_END_START_HERE, EFI_ABORTED};
       }
+      // The key that started a slow command can still be reported.
+      InputKeysAfterBusy (&Keys, ClockNowMs ());
       continue;
     }
     // While charging, a poll, then the CPU idles: the device may sit on this

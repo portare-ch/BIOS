@@ -249,7 +249,9 @@ QuirksSignalSdDetect (VOID)
 // SdccDxe: the 1.8 V request
 
 // The movk that sets S18R in the ACMD41 argument and what follows it, in
-// the SdccDxe builds. Stored XORed (HIDE).
+// the SdccDxe builds. The SM8550 build has the second with mov w22, #200
+// (its ACMD41 tries) as the fourth word, so that word isn't matched. Stored
+// XORed (HIDE).
 STATIC CONST UINT8 mAcmd41[2][24] = {
   {HIDE (0x15), HIDE (0x00), HIDE (0x90), HIDE (0x52), HIDE (0xf5),
    HIDE (0x3f), HIDE (0xa8), HIDE (0x72), HIDE (0x00), HIDE (0x00),
@@ -264,11 +266,13 @@ STATIC CONST UINT8 mAcmd41[2][24] = {
 };
 STATIC CONST UINT8 mAcmd41Mask[2][24] = {
   {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1},
-  {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+  {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1},
 };
-#define MOVK_AT         4
-#define MOVK_S18R_SET   0x72a83ff5u
-#define MOVK_S18R_CLEAR 0x72a81ff5u
+#define MOVK_AT       4
+#define MOVK_S18R_SET 0x72a83ff5u
+// S18R clear and XPC set (OCR bit 28, SDXC power control), as SM8550 cards
+// get.
+#define MOVK_XPC_S18R_CLEAR 0x72aa1ff5u
 #define MAX_SITES 16
 
 typedef struct _U64_LIST
@@ -315,7 +319,8 @@ Acmd41Sites (VOID)
 // SdccDxe: the card's power-up time
 
 // Every SdccDxe build tries ACMD41 200 times, 5 ms apart, so a card has a
-// second to power up, and one still busy then is never found.
+// second to power up, and one still busy then is never found. The tries
+// become 800 for the rest of the boot.
 #define HIDE32(x)    ((UINT32)((x) ^ 0x5a5a5a5au))
 #define SETUP_WORDS  16
 #define LOOP_WORDS   32
@@ -478,13 +483,74 @@ SpeedSelects (VOID)
   return Sites;
 }
 
+// TRUE if a removable raw disk has media: XBL's detection found the card.
+STATIC BOOLEAN
+SdCardPresent (VOID)
+{
+  EFI_HANDLE *Handles;
+  UINTN       Count   = LocateHandles (&gEfiBlockIoProtocolGuid, &Handles);
+  BOOLEAN     Present = FALSE;
+
+  for (UINTN Index = 0; Index < Count && !Present; Index++) {
+    EFI_BLOCK_IO_PROTOCOL *BlockIo =
+      GetProtocol (Handles[Index], &gEfiBlockIoProtocolGuid);
+
+    Present = BlockIo && BlockIo->Media && BlockIo->Media->MediaPresent &&
+              BlockIo->Media->RemovableMedia &&
+              !BlockIo->Media->LogicalPartition;
+  }
+  if (Handles) {
+    gBS->FreePool (Handles);
+  }
+  return Present;
+}
+
+// Some cards are found only at the driver's own speed. If detection found
+// no card, puts the speed selections in Speeds, which were patched to high
+// speed, back to the slot's and detects once more.
+STATIC VOID
+SpeedFallback (
+  IN CONST U64_LIST *Speeds,
+  IN LOG_SINK        Log
+)
+{
+  UINTN Restored = 0;
+
+  if (Speeds->Count == 0 || SdCardPresent ()) {
+    return;
+  }
+  for (UINTN Index = 0; Index < Speeds->Count; Index++) {
+    BOOLEAN Ok = WriteWord (
+      Speeds->Items[Index], TRUE, Reveal32 (mHighSpeed),
+      Reveal32 (mSpeedSelect[0])
+    );
+
+    LogPrint (
+      Log, "sdcc: no SD card at high speed: bus speed @0x%llx back to the "
+           "slot's: %s",
+      (UINT64)Speeds->Items[Index], Ok ? "done" : "REFUSED"
+    );
+    Restored += Ok ? 1 : 0;
+  }
+  if (Restored == 0) {
+    return;
+  }
+  QuirksSignalSdDetect ();
+  LogPrint (
+    Log, "sdcc: SD card at the default speed: %s",
+    SdCardPresent () ? "found" : "none"
+  );
+}
+
 UINT32
 QuirksSdccUhs (IN LOG_SINK Log)
 {
   U64_LIST    Sites   = Acmd41Sites ();
   TRIES_WORDS Tries   = TriesWords ();
+  U64_LIST    Speeds  = {0};
   UINT32      Patched = 0;
   UINTN       Longer  = 0;
+  UINTN       Faster  = 0;
 
   if (Sites.Count > MAX_SITES) {
     Sites.Count = MAX_SITES;
@@ -493,12 +559,12 @@ QuirksSdccUhs (IN LOG_SINK Log)
     Tries.Count = MAX_SITES;
   }
   for (UINTN Index = 0; Index < Sites.Count; Index++) {
-    UINT64       Site    = Sites.Items[Index];
-    BOOLEAN Ok = WriteWord (Site, TRUE, MOVK_S18R_SET, MOVK_S18R_CLEAR);
+    UINT64  Site = Sites.Items[Index];
+    BOOLEAN Ok   = WriteWord (Site, TRUE, MOVK_S18R_SET, MOVK_XPC_S18R_CLEAR);
 
     LogPrint (
       Log, "sdcc: site %llu @0x%llx -> %s", (UINT64)Index, (UINT64)Site,
-      Ok ? "patched" : "REFUSED"
+      Ok ? "patched (S18R clear, XPC set)" : "REFUSED"
     );
     Patched += Ok ? 1 : 0;
   }
@@ -523,8 +589,7 @@ QuirksSdccUhs (IN LOG_SINK Log)
   }
   // Only with S18R clear do cards stay at 3.3 V.
   if (Patched > 0) {
-    U64_LIST Speeds = SpeedSelects ();
-
+    Speeds = SpeedSelects ();
     if (Speeds.Count > MAX_SITES) {
       Speeds.Count = MAX_SITES;
     }
@@ -538,37 +603,61 @@ QuirksSdccUhs (IN LOG_SINK Log)
         Log, "sdcc: bus speed @0x%llx: the slot's -> high speed: %s",
         (UINT64)Speeds.Items[Index], Ok ? "patched" : "REFUSED"
       );
+      // Only the patched ones are kept, for SpeedFallback.
+      if (Ok) {
+        Speeds.Items[Faster++] = Speeds.Items[Index];
+      }
     }
     if (Speeds.Count == 0) {
       LogPrint (Log, "sdcc: no bus speed selection found");
     }
-    VecFree (&Speeds);
+    Speeds.Count = Faster;
   }
   if (Patched > 0 || Longer > 0) {
     // Detection runs inside SignalEvent, as its notify TPL is above ours.
     QuirksSignalSdDetect ();
+    SpeedFallback (&Speeds, Log);
   }
-  for (UINTN Index = 0; Index < Tries.Count; Index++) {
-    CONST TRIES_WORD *Word = &Tries.Items[Index];
-    BOOLEAN           Ok;
-
-    if (!Word->Patched) {
-      continue;
-    }
-    Ok = WriteWord (Word->At, TRUE, Word->Longer, Word->Built);
-    LogPrint (
-      Log, "sdcc: ACMD41 tries back to 200 @0x%llx: %s", (UINT64)Word->At,
-      Ok ? "done" : "REFUSED"
-    );
-  }
+  VecFree (&Speeds);
   VecFree (&Tries);
   VecFree (&Sites);
   return Patched;
 }
 
+// SdccDxe's SD detection only opens the slot if its DeviceHandle is NULL.
+// Once a card has been detected, removing or swapping it while in the menu
+// does not clear DeviceHandle until a BlockIo transfer runs
+// sdcc_handle_is_mem_present (CMD13), sees the card is gone or reset, and
+// calls sdcc_handle_close. Issue a zero-byte ReadBlocks (SdccDxe's presence
+// check) on each removable raw BlockIo handle before QuirksSignalSdDetect so
+// a removed or swapped card's stale handle is closed first.
+STATIC VOID
+SdccRefreshRemovableSlots (VOID)
+{
+  EFI_HANDLE *Handles = NULL;
+  UINTN       Count   = LocateHandles (&gEfiBlockIoProtocolGuid, &Handles);
+
+  for (UINTN Index = 0; Index < Count; Index++) {
+    EFI_BLOCK_IO_PROTOCOL *BlockIo =
+      GetProtocol (Handles[Index], &gEfiBlockIoProtocolGuid);
+    UINT8 Dummy;
+
+    if (!BlockIo || !BlockIo->Media || !BlockIo->Media->RemovableMedia ||
+        BlockIo->Media->LogicalPartition || !BlockIo->Media->MediaPresent ||
+        !BlockIo->ReadBlocks) {
+      continue;
+    }
+    BlockIo->ReadBlocks (BlockIo, BlockIo->Media->MediaId, 0, 0, &Dummy);
+  }
+  if (Handles) {
+    gBS->FreePool (Handles);
+  }
+}
+
 VOID
 QuirksPrepareStorage (VOID)
 {
+  SdccRefreshRemovableSlots ();
   QuirksSignalSdDetect ();
   InventoryConnectAll ();
 }

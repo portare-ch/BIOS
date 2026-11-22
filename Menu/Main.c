@@ -311,9 +311,9 @@ RunBoot (
 
 // FLAG_MAIN: runs the whole boot. Fastboot if a key or the reboot reason
 // asks for it, the charging screen when the charger switched the Nova on,
-// else Android or its recovery if the Boot order or Volume Up says so, else
-// PortareOS, falling back to the menu. Returns EFI_UNSUPPORTED, having done
-// nothing, if the ABL's state can't be read.
+// else Android or its recovery if the Boot order, Volume Up or a restart
+// into recovery says so, else PortareOS, falling back to the menu. Returns
+// EFI_UNSUPPORTED, having done nothing, if the ABL's state can't be read.
 STATIC EFI_STATUS
 MainBoot (IN CONST MENU_HOST *Host)
 {

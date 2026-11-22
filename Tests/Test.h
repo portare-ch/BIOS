@@ -39,4 +39,12 @@ LinuxBootTests (VOID);
 VOID
 BatteryTests (VOID);
 
+// What power-on starts, from the keys, Qualcomm's flags and the Boot order.
+VOID
+BootDecisionTests (VOID);
+
+// The key decoder: held keys, repeats and muted keys.
+VOID
+KeysTests (VOID);
+
 #endif

@@ -84,7 +84,8 @@ MenuHostState (
   Out->Entry           = Abl.Entry;
   Out->Key             = Abl.Key;
   CopyMem (Out->Version, Abl.Version, sizeof (Out->Version));
-  // Android starts first by the Boot order, or with Volume Up held.
+  // Android starts first by the Boot order, with Volume Up held, or on a
+  // recovery boot.
   {
     BOOT_DECISION_START Start = MenuHostStateStart (Out);
 

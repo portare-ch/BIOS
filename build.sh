@@ -69,6 +69,18 @@ else
   exit 1
 fi
 
+# The container runs as root, so what it writes into the tree is owned by
+# root on a Linux host, which stops git clean and later builds. Hand
+# anything not owned by the invoking user back to them, using a container
+# because that needs root. Done before fetching too, which mends trees
+# from older builds.
+reclaim() {
+  [ -d build ] && [ -n "$(find build ! -user "$(id -u)" -print -quit 2> /dev/null)" ] || return 0
+  docker run --rm --platform linux/amd64 -v "$PWD/build:/build" --entrypoint find "$IMAGE" \
+    /build ! -uid "$(id -u)" -exec chown -h "$(id -u):$(id -g)" {} + || true
+}
+reclaim
+
 Scripts/fetch.sh
 mkdir -p build/out
 
@@ -159,6 +171,7 @@ for attempt in 1 2; do
   status=1
 done
 rm -f build/.silent
+reclaim
 
 echo "build: $((($(date +%s) - STARTED) / 60)) minutes"
 for soc in "${ASKED[@]}"; do
