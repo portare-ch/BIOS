@@ -284,9 +284,18 @@ RunBoot (
   Charger =
     State->OffmodeCharging != 0 &&
     MenuHostAction (Host, OPENABL_MENU_ACTION_CHARGER_BOOT) == EFI_SUCCESS;
-  // BIOS shows its own charging screen, with or without Android, unless
-  // the menu picked something to start.
+  // Unless the menu picked something to start, Android charges the Nova
+  // where it is installed: the ABL starts it in its charger mode
+  // (androidboot.mode=charger), as OpenABL does. BIOS's own charging screen
+  // is for a Nova without Android, and for an Android that didn't start.
   if (Charger && !Once) {
+    if (MenuAndroidThere ()) {
+      EFI_STATUS Status;
+
+      MenuLog ("powered on by the charger: booting Android's charger mode");
+      Status = MenuHostAction (Host, OPENABL_MENU_ACTION_BOOT_ANDROID);
+      MenuLog ("Android's charger mode didn't boot (%s)", MENU_STATUS (Status));
+    }
     MenuLog ("powered on by the charger: the charging screen");
     return FastbootPath (Host, MENU_START_RESULT_CHARGING);
   }

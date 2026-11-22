@@ -55,9 +55,12 @@ layout. Images that use only BLS entries or EFI loaders need a compatible
 `KERNEL` image. Use each distribution's installer for ArmadaOS or ROCKNIX;
 the BIOS installer installs PortareOS.
 
-Enable the charging screen with `fastboot oem off-mode-charge 1` (`0`
-disables it). On that screen, Power boots the default system, a volume key
-opens the menu, and unplugging the charger turns the Nova off.
+Off-mode charging is enabled with `fastboot oem off-mode-charge 1` (`0`
+disables it). When the charger then switches the Nova on and Android is
+installed, Android starts in its charger mode and charges the battery. On a
+Nova without Android the BIOS shows its own charging screen: Power boots the
+default system, a volume key opens the menu, and unplugging the charger
+turns the Nova off.
 
 ## Installing PortareOS
 
