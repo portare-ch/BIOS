@@ -39,4 +39,8 @@ LinuxBootTests (VOID);
 VOID
 BatteryTests (VOID);
 
+// The key decoder: held keys, repeats and muted keys.
+VOID
+KeysTests (VOID);
+
 #endif

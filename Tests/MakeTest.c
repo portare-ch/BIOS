@@ -388,6 +388,7 @@ main (
   GptTests ();
   LinuxBootTests ();
   BatteryTests ();
+  KeysTests ();
   VbmetaHeader ();
   FatRefusals ();
   FatImage (Argv[1], "fat-4k", 2ull << 30, 4096);
