@@ -24,10 +24,13 @@
 // XBL's SdccDxe asks every SD card for 1.8 V signalling (S18R in ACMD41)
 // but never sends CMD11, so UHS cards that wait for it are never found.
 // Clears S18R at every ACMD41 site in firmware code outside this image (at
-// most 16). With S18R clear, the driver would ask a card for the slot's UHS
-// speed, so it asks for high speed instead. A card gets one second to power
-// up; that becomes four while card detection is signalled again, then the
-// second is put back. Returns the number of S18R sites patched.
+// most 16), and sets XPC there too. With S18R clear, the driver would ask a
+// card for the slot's UHS speed, so it asks for high speed instead. A card
+// gets one second to power up; that becomes four for the rest of the boot,
+// so a card put in or swapped at the menu gets them too. Then signals card
+// detection again; if that finds no card, puts the driver's own speed choice
+// back and detects once more (some cards are found only at the default
+// speed). Returns the number of S18R sites patched.
 UINT32
 QuirksSdccUhs (IN LOG_SINK Log);
 
@@ -36,8 +39,8 @@ QuirksSdccUhs (IN LOG_SINK Log);
 VOID
 QuirksSignalSdDetect (VOID);
 
-// Gets storage ready to read: signals SD card detection, then connects
-// every controller.
+// Gets storage ready to read: closes the SD slot of a card that was taken
+// out or swapped, signals SD card detection, then connects every controller.
 VOID
 QuirksPrepareStorage (VOID);
 
