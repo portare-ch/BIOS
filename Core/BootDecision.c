@@ -32,7 +32,10 @@ BootDecisionAndroid (
   IN BOOLEAN                    AndroidSetting
 )
 {
-  return AndroidSetting || BootDecisionUpHeld (Start);
+  // Recovery is Android's, so a recovery boot (fastboot reboot recovery, a
+  // system's reboot recovery, misc) starts Android with Linux first too.
+  return AndroidSetting || BootDecisionUpHeld (Start) ||
+         BootDecisionRecovery (Start, AndroidSetting);
 }
 
 BOOLEAN

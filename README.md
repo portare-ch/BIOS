@@ -35,6 +35,9 @@ Hold a volume key while powering on to change how the Nova starts:
 | Volume Up | Boots Android, or Android recovery if Android is the default. |
 
 `fastboot reboot bootloader` or a keyboard's Delete key also opens the menu.
+A restart into recovery (`fastboot reboot recovery`, or `reboot recovery`
+from a running system) starts Android recovery, whichever system is the
+default.
 
 In the menu, use Volume Up and Down to move and Power to select.
 **Boot** chooses a system for this boot; **Boot order** changes the default
